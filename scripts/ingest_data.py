@@ -16,7 +16,7 @@ def main() -> None:
         result = ingest_generated_data(
             connection,
             ROOT / "data",
-            ROOT / "infra" / "sql" / "001_initial.sql",
+            ROOT / "infra" / "sql",
         )
     print(json.dumps(result, indent=2))
 

@@ -1,4 +1,21 @@
-.PHONY: web-install web-build api-test lint typecheck test data-generate data-ingest resolve-entities build-graph build-search-index evaluate-smoke
+# All Python targets run inside the Compose `tools` container by default, so the
+# only host requirement is Docker. Override with `make PY=python <target>` to use a
+# local Python 3.12 virtual environment instead.
+TOOLS ?= docker compose --profile tools run --rm tools
+PY ?= $(TOOLS) python
+
+.PHONY: up down tools-build web-install web-build lint typecheck test test-integration \
+	migrate data-generate resolve-entities data-ingest build-graph build-search-index \
+	pipeline evaluate-smoke evaluate check
+
+up:
+	docker compose up -d --build
+
+down:
+	docker compose down
+
+tools-build:
+	docker compose --profile tools build tools
 
 web-install:
 	cd apps/web && npm install
@@ -6,32 +23,43 @@ web-install:
 web-build:
 	cd apps/web && npm run build
 
-api-test:
-	python -m pytest
-
 lint:
-	ruff check .
+	$(PY) -m ruff check src apps/api scripts tests
 
 typecheck:
-	mypy src apps/api
+	$(PY) -m mypy src apps/api scripts tests
 
-test: api-test
+test:
+	$(PY) -m pytest
 
-# Implemented in the synthetic ingestion phase.
+test-integration:
+	$(PY) -m pytest -m integration
+
+check: lint typecheck test
+
+migrate:
+	$(PY) scripts/migrate.py
+
 data-generate:
-	python scripts/generate_synthetic_data.py
+	$(PY) scripts/generate_synthetic_data.py
 
 resolve-entities:
-	python scripts/resolve_entities.py
+	$(PY) scripts/resolve_entities.py
 
 data-ingest:
-	python scripts/ingest_data.py
+	$(PY) scripts/ingest_data.py
 
 build-graph:
-	python scripts/build_graph.py --upload
+	$(PY) scripts/build_graph.py --upload
 
 build-search-index:
-	python scripts/build_search_index.py
+	$(PY) scripts/build_search_index.py
+
+# Full local data pipeline against the running Compose stack.
+pipeline: data-generate resolve-entities data-ingest build-graph build-search-index evaluate-smoke
 
 evaluate-smoke:
-	python scripts/run_evaluation.py --smoke --fail-on-regression
+	$(PY) scripts/run_evaluation.py --smoke --fail-on-regression
+
+evaluate:
+	$(PY) scripts/run_evaluation.py --fail-on-regression --policy-backend opa

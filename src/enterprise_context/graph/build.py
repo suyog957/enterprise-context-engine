@@ -10,7 +10,8 @@ from owlrl import DeductiveClosure, RDFS_Semantics
 from pyshacl import validate
 from rdflib import RDF, RDFS, XSD, Graph, Literal, Namespace, URIRef
 
-ROOT = Path(__file__).resolve().parents[3]
+from enterprise_context.config import get_settings
+
 ECG = Namespace("https://example.org/enterprise-context#")
 PROV = Namespace("http://www.w3.org/ns/prov#")
 SKOS = Namespace("http://www.w3.org/2004/02/skos/core#")
@@ -134,8 +135,11 @@ def _add_supplier_records(graph: Graph, records: list[dict[str, Any]]) -> dict[s
 
 
 def build_context_graph(
-    data_root: Path = ROOT / "data", ontology_root: Path = ROOT / "ontology"
+    data_root: Path | None = None, ontology_root: Path | None = None
 ) -> dict[str, Any]:
+    settings = get_settings()
+    data_root = data_root or settings.data_dir
+    ontology_root = ontology_root or settings.ontology_dir
     raw_root = data_root / "raw" / "generated"
     canonical_root = data_root / "canonical" / "generated"
     output_root = canonical_root

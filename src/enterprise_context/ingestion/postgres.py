@@ -12,6 +12,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from enterprise_context.domain.models import EntityResolutionResult
+from enterprise_context.migrations import apply_migrations
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -111,16 +112,8 @@ def build_source_supplier_rows(
     return rows
 
 
-def apply_schema(connection: psycopg.Connection[Any], schema_path: Path) -> None:
-    with connection.cursor() as cursor:
-        cursor.execute(schema_path.read_text(encoding="utf-8"))
-        cursor.execute(
-            "INSERT INTO schema_migration (version) VALUES (1) ON CONFLICT (version) DO NOTHING"
-        )
-
-
 def ingest_generated_data(
-    connection: psycopg.Connection[Any], data_root: Path, schema_path: Path
+    connection: psycopg.Connection[Any], data_root: Path, migrations_dir: Path
 ) -> dict[str, Any]:
     raw_root = data_root / "raw" / "generated"
     canonical_root = data_root / "canonical" / "generated"
@@ -166,7 +159,7 @@ def ingest_generated_data(
     run_id = uuid4()
     record_counts = Counter({kind: len(records) for kind, records in raw_records_by_type.items()})
     with connection.transaction():
-        apply_schema(connection, schema_path)
+        apply_migrations(connection, migrations_dir)
         connection.execute(
             "INSERT INTO ingestion_run (run_id, status, record_counts) VALUES (%s, 'RUNNING', %s)",
             (run_id, Jsonb(dict(record_counts))),

@@ -50,7 +50,7 @@ def test_postgres_ingestion_retains_and_canonicalizes_seed_data(tmp_path: Path) 
 
     with psycopg.connect(database_url) as connection:
         result = ingest_generated_data(
-            connection, data_root, ROOT / "infra" / "sql" / "001_initial.sql"
+            connection, data_root, ROOT / "infra" / "sql"
         )
         counts = connection.execute(
             """SELECT

@@ -54,6 +54,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      target: runtime
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-context_app}:${POSTGRES_PASSWORD:-local_dev_only_change_me}@postgres:5432/${POSTGRES_DB:-enterprise_context}
@@ -109,6 +110,32 @@ services:
       - prometheus_data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
+
+  # Developer tooling: `docker compose --profile tools run --rm tools <command>`.
+  # Runs scripts, lint, type checks and tests with the repository bind-mounted,
+  # so no host Python installation is required.
+  tools:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: tools
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-context_app}:${POSTGRES_PASSWORD:-local_dev_only_change_me}@postgres:5432/${POSTGRES_DB:-enterprise_context}
+      TEST_DATABASE_URL: ${TEST_DATABASE_URL:-}
+      FUSEKI_URL: http://fuseki:3030/enterprise
+      FUSEKI_ADMIN_USER: ${FUSEKI_ADMIN_USER:-admin}
+      FUSEKI_ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD:-local_dev_only_change_me}
+      OPENSEARCH_URL: http://opensearch:9200
+      OPA_URL: http://opa:8181
+      API_URL: http://api:8000
+      DATA_DIR: /work/data
+      ONTOLOGY_DIR: /work/ontology
+      MIGRATIONS_DIR: /work/infra/sql
+      ENVIRONMENT: local
+    volumes:
+      - .:/work
+    working_dir: /work
 
 volumes:
   postgres_data:
