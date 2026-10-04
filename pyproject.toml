@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1.0",
   "httpx>=0.28,<1.0",
-  "langgraph>=0.2.60,<1.0",
+  "langgraph>=1.0.10,<2.0",
   "opentelemetry-api>=1.30,<2.0",
   "opentelemetry-exporter-otlp-proto-http>=1.30,<2.0",
   "opentelemetry-instrumentation-fastapi>=0.51b0",
@@ -22,9 +22,11 @@ dependencies = [
   "pyshacl>=0.30,<1.0",
   "python-json-logger>=3.2,<4.0",
   "psycopg[binary,pool]>=3.2,<4.0",
-  "prometheus-fastapi-instrumentator>=7.0,<8.0",
+  "prometheus-client>=0.21,<1.0",
   "rapidfuzz>=3.11,<4.0",
   "rdflib>=7.1,<8.0",
+  # Explicit floor: Starlette < 1.3.1 has published request-handling advisories.
+  "starlette>=1.3.1,<2.0",
   "uvicorn[standard]>=0.34,<1.0",
 ]
 
@@ -32,8 +34,9 @@ dependencies = [
 dev = [
   "httpx>=0.28,<1.0",
   "mypy>=1.14,<2.0",
-  "pytest>=8.3,<9.0",
-  "pytest-cov>=6.0,<7.0",
+  "pytest>=9.0.3,<10.0",
+  "pytest-cov>=7.1,<8.0",
+  "pip-audit>=2.7,<3.0",
   "ruff>=0.9,<1.0",
 ]
 embeddings = ["sentence-transformers>=3.3,<6.0"]
@@ -43,8 +46,11 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
-markers = ["integration: requires external service dependencies"]
+addopts = "-ra --strict-markers -m 'not e2e'"
+markers = [
+  "integration: requires external service dependencies (isolated test databases)",
+  "e2e: requires the full running stack; run with -m e2e",
+]
 
 [tool.ruff]
 line-length = 100

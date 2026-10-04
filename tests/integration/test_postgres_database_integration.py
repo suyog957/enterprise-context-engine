@@ -49,9 +49,7 @@ def test_postgres_ingestion_retains_and_canonicalizes_seed_data(tmp_path: Path) 
             output.write(resolution.model_dump_json() + "\n")
 
     with psycopg.connect(database_url) as connection:
-        result = ingest_generated_data(
-            connection, data_root, ROOT / "infra" / "sql"
-        )
+        result = ingest_generated_data(connection, data_root, ROOT / "infra" / "sql")
         counts = connection.execute(
             """SELECT
                  (SELECT count(*) FROM canonical_supplier),

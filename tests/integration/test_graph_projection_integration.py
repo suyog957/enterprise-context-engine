@@ -45,7 +45,10 @@ def test_publish_switches_versions_atomically_and_drops_the_previous_graph() -> 
             writer, connection, TRIPLES, expected_triples=250, content_hash="first"
         )
         second = publish_graph_version(
-            writer, connection, TRIPLES[: TRIPLES.index(b"\n") + 1], expected_triples=1,
+            writer,
+            connection,
+            TRIPLES[: TRIPLES.index(b"\n") + 1],
+            expected_triples=1,
             content_hash="second",
         )
 

@@ -159,6 +159,7 @@ services:
       OPENSEARCH_URL: http://opensearch:9200
       OPA_URL: http://opa:8181
       API_URL: http://api:8000
+      E2E_API_URL: ${E2E_API_URL:-}
       DATA_DIR: /work/data
       ONTOLOGY_DIR: /work/ontology
       MIGRATIONS_DIR: /work/infra/sql

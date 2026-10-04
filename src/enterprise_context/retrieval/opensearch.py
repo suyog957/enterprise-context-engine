@@ -18,7 +18,6 @@ from enterprise_context.retrieval.rrf import RankedDocument, reciprocal_rank_fus
 
 SEARCH_ALIAS = "enterprise-context-documents"
 SearchMode = Literal["hybrid", "lexical", "vector"]
-VERSIONED_INDEX_PREFIX = f"{SEARCH_ALIAS}-v"
 
 
 class OpenSearchError(RuntimeError):
@@ -261,11 +260,19 @@ class OpenSearchHybridRetriever:
         ]
         return SearchResponse(query=request.query, hits=hits)
 
+    @property
+    def alias(self) -> str:
+        return self._index_name
+
+    @property
+    def versioned_prefix(self) -> str:
+        return f"{self._index_name}-v"
+
     def list_versioned_indices(self) -> list[str]:
         client, owns_client = self._get_client()
         try:
             response = client.get(
-                f"{self._base_url}/_cat/indices/{VERSIONED_INDEX_PREFIX}*",
+                f"{self._base_url}/_cat/indices/{self.versioned_prefix}*",
                 params={"format": "json"},
             )
             if response.status_code == 404:

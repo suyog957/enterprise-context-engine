@@ -35,22 +35,24 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
         return [json.loads(line) for line in source if line.strip()]
 
 
-def entity_resolution_metrics() -> dict[str, Any]:
+def entity_resolution_metrics(raw: Path = RAW, golden: Path = GOLDEN) -> dict[str, Any]:
     from enterprise_context.domain.models import GoldenEntityPair, SupplierSourceRecord
     from enterprise_context.entity_resolution.evaluation import evaluate_entity_resolution
     from enterprise_context.entity_resolution.resolver import resolve_supplier_records
 
     records = [
         SupplierSourceRecord.model_validate(row)
-        for row in read_jsonl(RAW / "supplier_source_records.jsonl")
+        for row in read_jsonl(raw / "supplier_source_records.jsonl")
     ]
     pairs = [
-        GoldenEntityPair.model_validate(row) for row in read_jsonl(GOLDEN / "entity_pairs.jsonl")
+        GoldenEntityPair.model_validate(row) for row in read_jsonl(golden / "entity_pairs.jsonl")
     ]
     return dict(evaluate_entity_resolution(pairs, resolve_supplier_records(records)))
 
 
-def policy_metrics(backend: str, limit: int) -> dict[str, Any]:
+def policy_metrics(
+    backend: str, limit: int, raw: Path = RAW, golden: Path = GOLDEN
+) -> dict[str, Any]:
     from enterprise_context.config import get_settings
     from enterprise_context.evaluation.policy_metrics import evaluate_policy_cases
     from enterprise_context.policy.client import OPAClient
@@ -62,13 +64,13 @@ def policy_metrics(backend: str, limit: int) -> dict[str, Any]:
         SupplierPolicyInput,
     )
 
-    suppliers = {row["supplier_id"]: row for row in read_jsonl(RAW / "suppliers.jsonl")}
-    buyers = {row["buyer_id"]: row for row in read_jsonl(RAW / "buyers.jsonl")}
+    suppliers = {row["supplier_id"]: row for row in read_jsonl(raw / "suppliers.jsonl")}
+    buyers = {row["buyer_id"]: row for row in read_jsonl(raw / "buyers.jsonl")}
     requisitions = {
-        row["requisition_id"]: row for row in read_jsonl(RAW / "purchase_requisitions.jsonl")
+        row["requisition_id"]: row for row in read_jsonl(raw / "purchase_requisitions.jsonl")
     }
-    products = {row["product_id"]: row for row in read_jsonl(RAW / "products.jsonl")}
-    cases = read_jsonl(GOLDEN / "workflow_cases.jsonl")[:limit]
+    products = {row["product_id"]: row for row in read_jsonl(raw / "products.jsonl")}
+    cases = read_jsonl(golden / "workflow_cases.jsonl")[:limit]
     client = OPAClient(get_settings().opa_url) if backend == "opa" else None
     decisions, expected, latencies = [], [], []
     for case in cases:
@@ -116,7 +118,7 @@ def policy_metrics(backend: str, limit: int) -> dict[str, Any]:
     return metrics
 
 
-def classification_metrics() -> dict[str, Any]:
+def classification_metrics(golden: Path = GOLDEN) -> dict[str, Any]:
     from enterprise_context.config import get_settings
     from enterprise_context.context_engine.classifier import IntentClassifier, taxonomy_labels
     from enterprise_context.evaluation.chat_eval import ChatCase
@@ -125,7 +127,7 @@ def classification_metrics() -> dict[str, Any]:
     classifier = IntentClassifier(
         taxonomy_labels(get_settings().ontology_dir), today=lambda: EVALUATION_AS_OF
     )
-    cases = [ChatCase.model_validate(row) for row in read_jsonl(GOLDEN / "chat_cases.jsonl")]
+    cases = [ChatCase.model_validate(row) for row in read_jsonl(golden / "chat_cases.jsonl")]
     labelled = [case for case in cases if case.expected_intent]
     wrong = [
         {

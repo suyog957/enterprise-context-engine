@@ -11,11 +11,7 @@ import psycopg
 
 from enterprise_context.projection.state import lock_and_next_version, record_published_version
 from enterprise_context.retrieval.models import IndexedDocument
-from enterprise_context.retrieval.opensearch import (
-    VERSIONED_INDEX_PREFIX,
-    OpenSearchError,
-    OpenSearchHybridRetriever,
-)
+from enterprise_context.retrieval.opensearch import OpenSearchError, OpenSearchHybridRetriever
 
 SEARCH_PROJECTION = "search_index"
 logger = logging.getLogger(__name__)
@@ -36,7 +32,7 @@ def publish_search_version(
     """Build a new index version, switch the alias atomically, then drop old versions."""
     with connection.transaction():
         version = lock_and_next_version(connection, SEARCH_PROJECTION)
-        index_name = f"{VERSIONED_INDEX_PREFIX}{version}"
+        index_name = f"{retriever.versioned_prefix}{version}"
         retriever.ensure_index(index_name)
         indexed = retriever.index_documents(documents, index_name)
         retired = retriever.switch_alias(index_name)

@@ -1,4 +1,4 @@
-"""Application metrics exposed on /metrics alongside the HTTP instrumentator metrics."""
+"""Application and HTTP metrics exposed on /metrics (Prometheus text format)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,15 @@ from prometheus_client import Counter, Histogram
 
 LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 
+HTTP_REQUESTS = Counter(
+    "ecg_http_requests_total", "HTTP requests by route template.", ["method", "route", "status"]
+)
+HTTP_LATENCY = Histogram(
+    "ecg_http_request_duration_seconds",
+    "HTTP request latency by route template.",
+    ["method", "route"],
+    buckets=LATENCY_BUCKETS,
+)
 STORE_LATENCY = Histogram(
     "ecg_store_latency_seconds",
     "Latency of calls to backing stores and services.",

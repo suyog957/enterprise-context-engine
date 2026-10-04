@@ -7,10 +7,10 @@ from uuid import UUID, uuid4
 
 import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
@@ -63,6 +63,7 @@ from enterprise_context.graph.templates import (
 from enterprise_context.observability.context import current_trace_id, set_request_id
 from enterprise_context.observability.jaeger import fetch_trace_summary
 from enterprise_context.observability.logging import configure_logging
+from enterprise_context.observability.metrics import HTTP_LATENCY, HTTP_REQUESTS
 from enterprise_context.observability.tracing import configure_tracing
 from enterprise_context.policy.client import PolicyServiceError
 from enterprise_context.retrieval.dependencies import get_search_retriever
@@ -96,8 +97,12 @@ app = FastAPI(
     version=settings.service_version,
     description="Local-first semantic context and policy-grounded procurement API.",
 )
-Instrumentator().instrument(app).expose(app, include_in_schema=False)
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.middleware("http")
@@ -108,10 +113,17 @@ async def attach_request_context(request: Request, call_next):  # type: ignore[n
     trace.get_current_span().set_attribute("ecg.request_id", request_id)
     started = time.perf_counter()
     response = await call_next(request)
+    elapsed = time.perf_counter() - started
     response.headers["x-request-id"] = request_id
     trace_id = current_trace_id()
     if trace_id:
         response.headers["x-trace-id"] = trace_id
+    # Label by route template (not raw path) to keep metric cardinality bounded.
+    route = getattr(request.scope.get("route"), "path", "unmatched")
+    HTTP_REQUESTS.labels(
+        method=request.method, route=route, status=str(response.status_code)
+    ).inc()
+    HTTP_LATENCY.labels(method=request.method, route=route).observe(elapsed)
     if not request.url.path.startswith(("/health", "/metrics")):
         logger.info(
             "request completed",
@@ -119,7 +131,7 @@ async def attach_request_context(request: Request, call_next):  # type: ignore[n
                 "method": request.method,
                 "path": request.url.path,
                 "status_code": response.status_code,
-                "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                "duration_ms": round(elapsed * 1000, 2),
             },
         )
     return response
