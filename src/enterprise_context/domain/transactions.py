@@ -69,7 +69,9 @@ class ProcurementTransactions:
             self._settings.database_url, connect_timeout=3, row_factory=dict_row
         ) as connection:
             context = self._load_context(connection, requisition_id, principal)
-        decision = self._evaluate(context, principal)
+        # Same approval-aware evaluation as action discovery, so discovery, simulation
+        # and dry-run execution agree once a matching approval has been granted.
+        decision = self.evaluate_action(context, principal)
         return ActionSimulation(
             requisition_id=requisition_id,
             decision=decision,

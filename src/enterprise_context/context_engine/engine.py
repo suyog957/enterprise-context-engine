@@ -30,6 +30,7 @@ from enterprise_context.context_engine.models import (
 )
 from enterprise_context.domain.action_discovery import ActionAvailability
 from enterprise_context.observability.tracing import traced
+from enterprise_context.security.injection import contains_instruction_like_text
 from enterprise_context.security.principals import PrincipalContext
 from enterprise_context.tools.base import ToolContext, ToolInvocation, ToolRegistry, ToolStatus
 
@@ -60,6 +61,10 @@ SUPPORTED_EXAMPLES = (
     "What is our policy for high-risk suppliers?",
 )
 PROBABLE_MARGIN = 0.05
+# Warnings that describe the answer without making its facts less reliable.
+INFORMATIONAL_WARNINGS = frozenset(
+    {"UNTRUSTED_INSTRUCTIONS_IN_DOCUMENT", "RESULTS_TRUNCATED", "MULTIPLE_REQUISITIONS_FIRST_USED"}
+)
 
 
 @dataclass
@@ -300,7 +305,7 @@ class ContextEngine:
             graph_projection = None
         if builder.required_failed:
             confidence = Confidence.LOW
-        elif builder.warnings or any(
+        elif set(builder.warnings) - INFORMATIONAL_WARNINGS or any(
             e.match_band == "PROBABLE" for e in builder.entities
         ):
             confidence = Confidence.REDUCED
@@ -347,25 +352,27 @@ class ContextEngine:
         )
         if result.ok:
             for hit in result.output["hits"]:
+                flagged = contains_instruction_like_text(f"{hit['title']} {hit['content']}")
+                if flagged:
+                    builder.warnings.append("UNTRUSTED_INSTRUCTIONS_IN_DOCUMENT")
                 builder.documents.append(
                     DocumentRef(
                         document_id=hit["document_id"],
                         title=hit["title"],
-                        snippet=hit["content"][:400],
+                        snippet="" if flagged else hit["content"][:400],
                         document_type=hit["document_type"],
                         source_record_id=hit["source_record_id"],
                         rrf_rank=hit["rrf_rank"],
                         bm25_rank=hit.get("bm25_rank"),
                         vector_rank=hit.get("vector_rank"),
+                        flagged_instructions=flagged,
                     )
                 )
         else:
             builder.warnings.append("DOCUMENT_SEARCH_UNAVAILABLE")
         return result
 
-    def _provenance_from_graph(
-        self, builder: _Builder, entity_id: str, ctx: ToolContext
-    ) -> None:
+    def _provenance_from_graph(self, builder: _Builder, entity_id: str, ctx: ToolContext) -> None:
         result = self._call(
             builder.calls,
             "query_graph",
@@ -650,9 +657,7 @@ class ContextEngine:
         self, builder: _Builder, resolution: EntityResolution, ctx: ToolContext
     ) -> None:
         del resolution
-        result = self._search(
-            builder, builder.classification.question, ["PROCUREMENT_POLICY"], ctx
-        )
+        result = self._search(builder, builder.classification.question, ["PROCUREMENT_POLICY"], ctx)
         if not result.ok:
             builder.required_failed = True
 

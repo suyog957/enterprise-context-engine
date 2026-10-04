@@ -17,9 +17,5 @@ def current_graph_version() -> str | None:
 @lru_cache(maxsize=1)
 def get_context_engine() -> ContextEngine:
     settings = get_settings()
-    classifier = IntentClassifier(
-        taxonomy_labels(settings.ontology_dir), llm=get_llm_provider()
-    )
-    return ContextEngine(
-        get_tool_registry(), classifier, graph_version=current_graph_version
-    )
+    classifier = IntentClassifier(taxonomy_labels(settings.ontology_dir), llm=get_llm_provider())
+    return ContextEngine(get_tool_registry(), classifier, graph_version=current_graph_version)

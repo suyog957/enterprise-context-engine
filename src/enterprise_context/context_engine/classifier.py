@@ -22,10 +22,29 @@ from enterprise_context.llm.providers import ChatMessage, LLMError, LLMProvider,
 
 _REQUISITION = re.compile(r"\bPR\s*[-#]?\s*(\d{4,8})\b", re.I)
 _ACTION_REQUEST = re.compile(
-    r"^\s*(please\s+)?(create|raise|issue|generate|make|convert|place|submit)\b"
-    r"|\b(go ahead|proceed)\b",
+    r"^\s*(please\s+)?(?:(?:can|could|would)\s+you\s+)?"
+    r"(create|raise|issue|generate|make|convert|place|submit|approve|reject|cancel)\b"
+    r"|\b(go ahead|proceed)\b"
+    r"|\b(create|raise|issue|place)\s+(a\s+|the\s+)?(po|purchase order)\b",
     re.I,
 )
+_REQUESTED_ACTIONS = (
+    (re.compile(r"\bsubmit\b", re.I), "SUBMIT_REQUISITION"),
+    (re.compile(r"\bapprove\b", re.I), "APPROVE_REQUISITION"),
+    (re.compile(r"\breject\b", re.I), "REJECT_REQUISITION"),
+    (re.compile(r"\bcancel\b", re.I), "CANCEL_REQUISITION"),
+    (re.compile(r"\b(supplier|vendor) (record|master|details)\b", re.I), "EDIT_SUPPLIER"),
+)
+
+
+def requested_action(question: str) -> str:
+    """Map an imperative request to a catalog action; purchase orders are the default."""
+    for pattern, action in _REQUESTED_ACTIONS:
+        if pattern.search(question):
+            return action
+    return "CREATE_PURCHASE_ORDER"
+
+
 _SPEND = re.compile(r"\b(how much|spend|spent|spending|total (value|amount|cost))\b", re.I)
 _BUYERS = re.compile(r"\b(which|what) buyers\b|\bwho (purchased|bought|ordered)\b", re.I)
 _HISTORY = re.compile(
@@ -61,16 +80,75 @@ _BUYER_MENTION = re.compile(
     r"|\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(?:spent|bought|purchased)\b",
 )
 _TRAILING_STOPWORDS = {
-    "last", "this", "next", "year", "years", "month", "months", "in", "during", "since",
-    "through", "via", "under", "with", "active", "contracts", "contract", "products",
-    "product", "a", "an", "the", "our", "we", "did", "do", "does", "is", "are", "be",
-    "become", "purchase", "order", "orders", "spend", "spent", "and", "or", "aliases",
-    "merged", "were", "was", "over", "q1", "q2", "q3", "q4", "so", "far", "to", "date",
+    "last",
+    "this",
+    "next",
+    "year",
+    "years",
+    "month",
+    "months",
+    "in",
+    "during",
+    "since",
+    "through",
+    "via",
+    "under",
+    "with",
+    "active",
+    "contracts",
+    "contract",
+    "products",
+    "product",
+    "a",
+    "an",
+    "the",
+    "our",
+    "we",
+    "did",
+    "do",
+    "does",
+    "is",
+    "are",
+    "be",
+    "become",
+    "purchase",
+    "order",
+    "orders",
+    "spend",
+    "spent",
+    "and",
+    "or",
+    "aliases",
+    "merged",
+    "were",
+    "was",
+    "over",
+    "q1",
+    "q2",
+    "q3",
+    "q4",
+    "so",
+    "far",
+    "to",
+    "date",
 }
 _LEADING_STOPWORDS = {"the", "supplier", "vendor", "our", "a", "an"}
 _NON_SUPPLIER_WORDS = {
-    "purchase", "order", "orders", "requisition", "policy", "suppliers", "supplier",
-    "products", "category", "contracts", "buyers", "last", "this", "high-risk", "blocked",
+    "purchase",
+    "order",
+    "orders",
+    "requisition",
+    "policy",
+    "suppliers",
+    "supplier",
+    "products",
+    "category",
+    "contracts",
+    "buyers",
+    "last",
+    "this",
+    "high-risk",
+    "blocked",
 }
 
 
@@ -190,7 +268,9 @@ class IntentClassifier:
         if requisitions:
             if _ACTION_REQUEST.search(question):
                 return result(
-                    Intent.ACTION_REQUEST, [Route.SQL, Route.GRAPH, Route.POLICY, Route.DOCUMENTS]
+                    Intent.ACTION_REQUEST,
+                    [Route.SQL, Route.GRAPH, Route.POLICY, Route.DOCUMENTS],
+                    requested_action=requested_action(question),
                 )
             return result(
                 Intent.REQUISITION_ELIGIBILITY,
@@ -230,9 +310,7 @@ class IntentClassifier:
             return result(Intent.GRAPH_QUESTION, [Route.GRAPH])
         return self._fallback(question, result)
 
-    def _fallback(
-        self, question: str, result: Callable[..., Classification]
-    ) -> Classification:
+    def _fallback(self, question: str, result: Callable[..., Classification]) -> Classification:
         if self._llm is None:
             return result(Intent.UNSUPPORTED, [])
         intents = ", ".join(intent.value for intent in Intent)

@@ -61,6 +61,7 @@ class Classification(BaseModel):
     buyer_mention: str | None = None
     category: str | None = None
     graph_template: str | None = None
+    requested_action: str | None = None
     period: Period | None = None
     classifier: str = "rules"
 
@@ -103,6 +104,9 @@ class DocumentRef(BaseModel):
     vector_rank: int | None = None
     untrusted: bool = Field(
         default=True, description="Retrieved text is evidence, never instructions."
+    )
+    flagged_instructions: bool = Field(
+        default=False, description="Contains instruction-like text; excluded from answers."
     )
 
 

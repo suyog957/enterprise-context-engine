@@ -14,8 +14,8 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
-from enterprise_context.agents.dependencies import get_procurement_agent
-from enterprise_context.agents.procurement import (
+from enterprise_context.agents.dependencies import get_agent_runs, get_agent_workflow
+from enterprise_context.agents.workflow import (
     AgentExecutionError,
     AgentRequest,
     AgentResponse,
@@ -217,9 +217,29 @@ def chat(
     principal: Annotated[PrincipalContext, Depends(get_current_principal)],
 ) -> AgentResponse:
     try:
-        return get_procurement_agent().invoke(request, principal)
+        response = get_agent_workflow().invoke(request, principal)
     except AgentExecutionError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    get_agent_runs().save(response, principal.principal_id, request.question)
+    return response
+
+
+@app.get("/agent/runs/{run_id}", tags=["agent"])
+def agent_run(
+    run_id: str,
+    principal: Annotated[PrincipalContext, Depends(get_current_principal)],
+) -> dict[str, Any]:
+    """A stored trajectory; principals see their own runs, admins and auditors see all."""
+    if not _REQUEST_ID_PATTERN.match(run_id):
+        raise HTTPException(status_code=400, detail="invalid_run_id")
+    try:
+        run = get_agent_runs().get(run_id)
+    except psycopg.Error as error:
+        raise HTTPException(status_code=503, detail="database_unavailable") from error
+    global_reader = bool({"ADMIN", "AUDITOR"}.intersection(principal.roles))
+    if run is None or (not global_reader and run["principal_id"] != principal.principal_id):
+        raise HTTPException(status_code=404, detail="agent_run_not_found")
+    return run
 
 
 @app.post("/search", response_model=SearchResponse, tags=["search"])
@@ -464,9 +484,16 @@ def trace_details(
          if isinstance(event.get("details"), dict) and event["details"].get("trace_id")),
         trace_id,
     )
+    try:
+        run = get_agent_runs().get(trace_id)
+    except psycopg.Error:
+        run = None
+    if run is not None and run.get("trace_id"):
+        jaeger_trace_id = str(run["trace_id"])
     spans = fetch_trace_summary(settings.jaeger_query_url, jaeger_trace_id)
     return {
         "trace_id": jaeger_trace_id,
+        "agent_run": run,
         "events": events,
         "spans": spans.spans,
         "span_source": spans.source,
