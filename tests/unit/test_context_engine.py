@@ -38,7 +38,11 @@ def classifier() -> IntentClassifier:
             Intent.ACTION_REQUEST,
             {"requested_action": "CREATE_PURCHASE_ORDER"},
         ),
-        ("Please cancel PR-1007", Intent.ACTION_REQUEST, {"requested_action": "CANCEL_REQUISITION"}),
+        (
+            "Please cancel PR-1007",
+            Intent.ACTION_REQUEST,
+            {"requested_action": "CANCEL_REQUISITION"},
+        ),
         (
             "How much did Alice spend with Acme last year?",
             Intent.SPEND_AGGREGATION,

@@ -16,6 +16,9 @@ from enterprise_context.retrieval.models import (
 )
 from enterprise_context.retrieval.rrf import RankedDocument, reciprocal_rank_fusion
 
+SEARCH_ALIAS = "enterprise-context-documents"
+VERSIONED_INDEX_PREFIX = f"{SEARCH_ALIAS}-v"
+
 
 class OpenSearchError(RuntimeError):
     """Raised when indexing or hybrid search cannot be completed."""
@@ -61,7 +64,7 @@ class OpenSearchHybridRetriever:
         base_url: str,
         embedder: EmbeddingProvider,
         *,
-        index_name: str = "enterprise-context-documents-v1",
+        index_name: str = SEARCH_ALIAS,
         timeout_seconds: float = 4.0,
         rank_constant: int = 60,
         client: httpx.Client | None = None,
@@ -73,10 +76,11 @@ class OpenSearchHybridRetriever:
         self._rank_constant = rank_constant
         self._client = client
 
-    def ensure_index(self) -> None:
+    def ensure_index(self, index_name: str | None = None) -> None:
+        index_name = index_name or self._index_name
         client, owns_client = self._get_client()
         try:
-            response = client.head(f"{self._base_url}/{self._index_name}")
+            response = client.head(f"{self._base_url}/{index_name}")
             if response.status_code == 200:
                 return
             if response.status_code != 404:
@@ -112,7 +116,7 @@ class OpenSearchHybridRetriever:
                     }
                 },
             }
-            created = client.put(f"{self._base_url}/{self._index_name}", json=mapping)
+            created = client.put(f"{self._base_url}/{index_name}", json=mapping)
             created.raise_for_status()
         except httpx.HTTPError as error:
             raise OpenSearchError("Unable to create or inspect the OpenSearch index") from error
@@ -120,7 +124,10 @@ class OpenSearchHybridRetriever:
             if owns_client:
                 client.close()
 
-    def index_documents(self, documents: Sequence[IndexedDocument]) -> int:
+    def index_documents(
+        self, documents: Sequence[IndexedDocument], index_name: str | None = None
+    ) -> int:
+        index_name = index_name or self._index_name
         if not documents:
             return 0
         vectors = self._embedder.embed([f"{doc.title}\n{doc.content}" for doc in documents])
@@ -128,7 +135,7 @@ class OpenSearchHybridRetriever:
         for document, vector in zip(documents, vectors, strict=True):
             lines.append(
                 json.dumps(
-                    {"index": {"_index": self._index_name, "_id": document.document_id}},
+                    {"index": {"_index": index_name, "_id": document.document_id}},
                     separators=(",", ":"),
                 )
             )
@@ -140,6 +147,7 @@ class OpenSearchHybridRetriever:
         try:
             response = client.post(
                 f"{self._base_url}/_bulk",
+                params={"refresh": "true"},
                 content=payload,
                 headers={"Content-Type": "application/x-ndjson"},
             )
@@ -247,6 +255,57 @@ class OpenSearchHybridRetriever:
             for rank, item in enumerate(fused, start=1)
         ]
         return SearchResponse(query=request.query, hits=hits)
+
+    def list_versioned_indices(self) -> list[str]:
+        client, owns_client = self._get_client()
+        try:
+            response = client.get(
+                f"{self._base_url}/_cat/indices/{VERSIONED_INDEX_PREFIX}*",
+                params={"format": "json"},
+            )
+            if response.status_code == 404:
+                return []
+            response.raise_for_status()
+            return sorted(str(row["index"]) for row in response.json())
+        except (httpx.HTTPError, ValueError, KeyError) as error:
+            raise OpenSearchError("Unable to list search indices") from error
+        finally:
+            if owns_client:
+                client.close()
+
+    def switch_alias(self, new_index: str) -> list[str]:
+        """Atomically point the search alias at ``new_index``; return retired indices."""
+        retired = [index for index in self.list_versioned_indices() if index != new_index]
+        client, owns_client = self._get_client()
+        try:
+            current = client.get(f"{self._base_url}/_alias/{self._index_name}")
+            members = list(current.json()) if current.status_code == 200 else []
+            actions: list[dict[str, Any]] = [
+                {"remove": {"index": index, "alias": self._index_name}}
+                for index in members
+                if index != new_index
+            ]
+            actions.append({"add": {"index": new_index, "alias": self._index_name}})
+            response = client.post(f"{self._base_url}/_aliases", json={"actions": actions})
+            response.raise_for_status()
+            return retired
+        except (httpx.HTTPError, ValueError) as error:
+            raise OpenSearchError("Unable to switch the search alias") from error
+        finally:
+            if owns_client:
+                client.close()
+
+    def delete_index(self, index_name: str) -> None:
+        client, owns_client = self._get_client()
+        try:
+            response = client.delete(f"{self._base_url}/{index_name}")
+            if response.status_code != 404:
+                response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise OpenSearchError(f"Unable to delete index {index_name}") from error
+        finally:
+            if owns_client:
+                client.close()
 
     def _get_client(self) -> tuple[httpx.Client, bool]:
         if self._client is not None:

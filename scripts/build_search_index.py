@@ -4,8 +4,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+import psycopg
+
+from enterprise_context.config import get_settings
 from enterprise_context.retrieval.dependencies import get_search_retriever
 from enterprise_context.retrieval.models import IndexedDocument
+from enterprise_context.retrieval.projection import publish_search_version
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,10 +24,9 @@ def main() -> None:
         IndexedDocument.model_validate(record)
         for record in read_jsonl(ROOT / "data" / "raw" / "generated" / "documents.jsonl")
     ]
-    retriever = get_search_retriever()
-    retriever.ensure_index()
-    indexed = retriever.index_documents(documents)
-    print(json.dumps({"index": "enterprise-context-documents-v1", "indexed_documents": indexed}))
+    with psycopg.connect(get_settings().database_url, autocommit=True) as connection:
+        result = publish_search_version(get_search_retriever(), connection, documents)
+    print(json.dumps(result))
 
 
 if __name__ == "__main__":

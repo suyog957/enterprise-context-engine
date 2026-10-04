@@ -11,7 +11,10 @@ def current_graph_version() -> str | None:
     version = get_graph_resolver().current()
     if version is None:
         return None
-    return f"{version.target_uri} (published {version.published_at.isoformat()})"
+    freshness = f"{version.target_uri} (published {version.published_at.isoformat()}"
+    if version.source_watermark is not None:
+        freshness += f"; changes applied through {version.source_watermark.isoformat()}"
+    return freshness + ")"
 
 
 @lru_cache(maxsize=1)

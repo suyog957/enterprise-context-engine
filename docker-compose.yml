@@ -83,6 +83,28 @@ services:
       retries: 10
       start_period: 10s
 
+  # Applies committed outbox events (e.g. new purchase orders) to the RDF projection.
+  projector:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    command: ["python", "-m", "enterprise_context.projection.worker"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-context_app}:${POSTGRES_PASSWORD:-local_dev_only_change_me}@postgres:5432/${POSTGRES_DB:-enterprise_context}
+      FUSEKI_URL: http://fuseki:3030/enterprise
+      FUSEKI_ADMIN_USER: ${FUSEKI_ADMIN_USER:-admin}
+      FUSEKI_ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD:-local_dev_only_change_me}
+      ENVIRONMENT: local
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fuseki:
+        condition: service_started
+
   web:
     build:
       context: .

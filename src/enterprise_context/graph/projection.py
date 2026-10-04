@@ -10,15 +10,17 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 import psycopg
 from psycopg.pq import TransactionStatus
-from psycopg.rows import dict_row, tuple_row
+from psycopg.rows import dict_row
 
 from enterprise_context.graph.query import FusekiGraphStore, GraphQueryError
+from enterprise_context.projection.state import lock_and_next_version, record_published_version
 
 GRAPH_PROJECTION = "context_graph"
 GRAPH_URI_PREFIX = "urn:ecg:graph:context:v"
@@ -34,6 +36,7 @@ class ProjectionVersion:
     content_hash: str | None
     item_count: int | None
     published_at: datetime
+    source_watermark: datetime | None = None
 
 
 def graph_uri_for(version: int) -> str:
@@ -45,7 +48,8 @@ def current_projection(
 ) -> ProjectionVersion | None:
     with connection.cursor(row_factory=dict_row) as cursor:
         row = cursor.execute(
-            """SELECT projection, version, target_uri, content_hash, item_count, published_at
+            """SELECT projection, version, target_uri, content_hash, item_count, published_at,
+                      source_watermark
                FROM projection_state WHERE projection = %s AND status = 'PUBLISHED'""",
             (projection,),
         ).fetchone()
@@ -84,8 +88,13 @@ def publish_graph_version(
     *,
     expected_triples: int,
     content_hash: str,
+    before_switch: Callable[[str], datetime | None] | None = None,
 ) -> ProjectionVersion:
     """Publish a validated graph as the next version and retire the previous one.
+
+    ``before_switch`` runs against the new graph while the publish lock is held (the
+    projector waits on the same lock), e.g. to replay committed outbox events; it may
+    return the newest event time it applied, recorded as the source watermark.
 
     The version switch must be committed before the previous graph is dropped, so the
     caller must pass a connection without an open transaction (ideally autocommit);
@@ -94,13 +103,7 @@ def publish_graph_version(
     if connection.info.transaction_status != TransactionStatus.IDLE:
         raise ValueError("publish_graph_version requires a connection with no open transaction")
     with connection.transaction():
-        with connection.cursor(row_factory=tuple_row) as cursor:
-            cursor.execute("SELECT pg_advisory_xact_lock(724002)")
-            row = cursor.execute(
-                "SELECT COALESCE(MAX(version), 0) FROM projection_history WHERE projection = %s",
-                (GRAPH_PROJECTION,),
-            ).fetchone()
-        next_version = int(row[0] if row else 0) + 1
+        next_version = lock_and_next_version(connection, GRAPH_PROJECTION)
         previous = current_projection(connection)
         graph_uri = graph_uri_for(next_version)
 
@@ -111,28 +114,21 @@ def publish_graph_version(
             raise GraphQueryError(
                 f"Published graph has {published_count} triples, expected {expected_triples}"
             )
-
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """INSERT INTO projection_state
-                   (projection, version, target_uri, content_hash, item_count, status)
-                   VALUES (%s, %s, %s, %s, %s, 'PUBLISHED')
-                   ON CONFLICT (projection) DO UPDATE SET
-                     version = EXCLUDED.version, target_uri = EXCLUDED.target_uri,
-                     content_hash = EXCLUDED.content_hash, item_count = EXCLUDED.item_count,
-                     status = 'PUBLISHED', published_at = now()""",
-                (GRAPH_PROJECTION, next_version, graph_uri, content_hash, published_count),
-            )
-            cursor.execute(
-                """INSERT INTO projection_history
-                   (projection, version, target_uri, content_hash, item_count)
-                   VALUES (%s, %s, %s, %s, %s)""",
-                (GRAPH_PROJECTION, next_version, graph_uri, content_hash, published_count),
-            )
-            cursor.execute(
-                """UPDATE projection_history SET retired_at = now()
-                   WHERE projection = %s AND version < %s AND retired_at IS NULL""",
-                (GRAPH_PROJECTION, next_version),
+        watermark = before_switch(graph_uri) if before_switch is not None else None
+        if before_switch is not None:
+            published_count = store.count_triples(graph_uri)
+        record_published_version(
+            connection,
+            GRAPH_PROJECTION,
+            next_version,
+            graph_uri,
+            content_hash=content_hash,
+            item_count=published_count,
+        )
+        if watermark is not None:
+            connection.execute(
+                "UPDATE projection_state SET source_watermark = %s WHERE projection = %s",
+                (watermark, GRAPH_PROJECTION),
             )
 
     # Readers have switched; old graphs (including orphans from failed runs) can go.

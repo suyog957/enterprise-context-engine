@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime
 from pathlib import Path
 
 import psycopg
@@ -10,6 +11,7 @@ from enterprise_context.config import get_settings
 from enterprise_context.graph.build import build_context_graph
 from enterprise_context.graph.projection import publish_graph_version
 from enterprise_context.graph.query import FusekiGraphStore
+from enterprise_context.projection.worker import GraphProjector, replay_events
 
 
 def main() -> None:
@@ -30,13 +32,24 @@ def main() -> None:
             admin_user=settings.fuseki_admin_user,
             admin_password=settings.fuseki_admin_password,
         )
+        projector = GraphProjector(store)
+        replayed: list[int] = []
         with psycopg.connect(settings.database_url, autocommit=True) as connection:
+
+            def replay(graph_uri: str) -> datetime | None:
+                # Committed platform writes are replayed from the outbox so a rebuild
+                # from source files never loses them.
+                count, watermark = replay_events(connection, projector, graph_uri)
+                replayed.append(count)
+                return watermark
+
             version = publish_graph_version(
                 store,
                 connection,
                 Path(summary["ntriples_path"]).read_bytes(),
                 expected_triples=int(summary["output_triples"]),
                 content_hash=str(summary["content_hash"]),
+                before_switch=replay,
             )
         print(
             json.dumps(
@@ -44,6 +57,7 @@ def main() -> None:
                     "published_graph": version.target_uri,
                     "version": version.version,
                     "triples": version.item_count,
+                    "replayed_events": sum(replayed),
                 }
             )
         )

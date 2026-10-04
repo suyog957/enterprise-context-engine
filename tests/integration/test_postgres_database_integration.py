@@ -56,7 +56,7 @@ def test_postgres_ingestion_retains_and_canonicalizes_seed_data(tmp_path: Path) 
             """SELECT
                  (SELECT count(*) FROM canonical_supplier),
                  (SELECT count(*) FROM purchase_requisition),
-                 (SELECT count(*) FROM purchase_order),
+                 (SELECT count(*) FROM purchase_order WHERE source_system = 'ERP'),
                  (SELECT count(*) FROM contract),
                  (SELECT count(*) FROM principal),
                  (SELECT count(*) FROM purchase_order WHERE canonical_supplier_id IS NULL),

@@ -348,7 +348,10 @@ def ingest_generated_data(
                  canonical_supplier_id = EXCLUDED.canonical_supplier_id,
                  buyer_id = EXCLUDED.buyer_id,
                  business_unit_id = EXCLUDED.business_unit_id,
-                 state = EXCLUDED.state,
+                 -- A conversion committed by this platform is authoritative over a
+                 -- re-ingested source state.
+                 state = CASE WHEN purchase_requisition.state = 'CONVERTED'
+                              THEN purchase_requisition.state ELSE EXCLUDED.state END,
                  amount = EXCLUDED.amount,
                  currency = EXCLUDED.currency,
                  product_ids = EXCLUDED.product_ids,

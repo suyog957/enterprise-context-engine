@@ -6,7 +6,7 @@ PY ?= $(TOOLS) python
 
 .PHONY: up down tools-build web-install web-build lint typecheck test test-integration \
 	migrate data-generate resolve-entities data-ingest build-graph build-search-index \
-	pipeline evaluate-smoke evaluate check
+	pipeline evaluate-smoke evaluate check rebuild-projections process-outbox
 
 up:
 	docker compose up -d --build
@@ -55,8 +55,14 @@ build-graph:
 build-search-index:
 	$(PY) scripts/build_search_index.py
 
+rebuild-projections:
+	$(PY) scripts/rebuild_projections.py --graph --search
+
+process-outbox:
+	$(PY) scripts/rebuild_projections.py --process-outbox
+
 # Full local data pipeline against the running Compose stack.
-pipeline: data-generate resolve-entities data-ingest build-graph build-search-index evaluate-smoke
+pipeline: migrate data-generate resolve-entities data-ingest build-graph build-search-index evaluate-smoke
 
 evaluate-smoke:
 	$(PY) scripts/run_evaluation.py --smoke --fail-on-regression
