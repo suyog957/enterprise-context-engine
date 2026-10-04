@@ -1,0 +1,30 @@
+@prefix ecg: <https://example.org/enterprise-context#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ ecg:SupplierShape a sh:NodeShape ;
+    sh:targetClass ecg:Supplier ;
+    sh:property [ sh:path ecg:canonicalId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path ecg:displayName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path ecg:hasSupplierStatus ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ecg:SupplierStatus ] .
+
+ecg:PurchaseOrderShape a sh:NodeShape ;
+    sh:targetClass ecg:PurchaseOrder ;
+    sh:property [ sh:path ecg:hasSupplier ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ecg:Supplier ] ;
+    sh:property [ sh:path ecg:ownedByBuyer ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ecg:Buyer ] ;
+    sh:property [ sh:path ecg:currency ; sh:minCount 1 ; sh:maxCount 1 ; sh:pattern "^[A-Z]{3}$" ] ;
+    sh:property [ sh:path ecg:amount ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minInclusive 0 ] .
+
+ecg:RequisitionShape a sh:NodeShape ;
+    sh:targetClass ecg:PurchaseRequisition ;
+    sh:property [ sh:path ecg:hasState ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ecg:ProcessState ] ;
+    sh:property [ sh:path ecg:hasSupplier ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ecg:Supplier ] ;
+    sh:property [ sh:path ecg:ownedByBuyer ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ecg:Buyer ] ;
+    sh:property [ sh:path ecg:currency ; sh:minCount 1 ; sh:pattern "^[A-Z]{3}$" ] ;
+    sh:property [ sh:path ecg:amount ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:decimal ; sh:minInclusive 0 ] .
+
+ecg:ContractShape a sh:NodeShape ;
+    sh:targetClass ecg:Contract ;
+    sh:property [ sh:path ecg:startDate ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:date ] ;
+    sh:property [ sh:path ecg:endDate ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:date ] ;
+    sh:property [ sh:path ecg:hasSupplier ; sh:minCount 1 ; sh:maxCount 1 ; sh:class ecg:Supplier ] .

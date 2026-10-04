@@ -1,0 +1,86 @@
+@prefix ecg: <https://example.org/enterprise-context#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<https://example.org/enterprise-context> a owl:Ontology ;
+    rdfs:label "Enterprise Context Ontology" ;
+    rdfs:comment "Stable procurement concepts; dynamic authorization and business rules are evaluated outside OWL." .
+
+ecg:Entity a owl:Class .
+ecg:Person a owl:Class ; rdfs:subClassOf ecg:Entity .
+ecg:Organization a owl:Class ; rdfs:subClassOf ecg:Entity .
+ecg:BusinessPartner a owl:Class ; rdfs:subClassOf ecg:Organization .
+ecg:Supplier a owl:Class ; rdfs:subClassOf ecg:BusinessPartner .
+ecg:Buyer a owl:Class ; rdfs:subClassOf ecg:Person .
+ecg:BusinessUnit a owl:Class ; rdfs:subClassOf ecg:Entity .
+ecg:Product a owl:Class ; rdfs:subClassOf ecg:Entity .
+ecg:ProductCategory a owl:Class ; rdfs:subClassOf ecg:Entity .
+ecg:BusinessDocument a owl:Class ; rdfs:subClassOf ecg:Entity .
+ecg:PurchaseRequisition a owl:Class ; rdfs:subClassOf ecg:BusinessDocument .
+ecg:PurchaseOrder a owl:Class ; rdfs:subClassOf ecg:BusinessDocument .
+ecg:Contract a owl:Class ; rdfs:subClassOf ecg:BusinessDocument .
+ecg:Policy a owl:Class ; rdfs:subClassOf ecg:BusinessDocument .
+ecg:BusinessAction a owl:Class ; rdfs:subClassOf ecg:Entity .
+ecg:ProcessState a owl:Class ; rdfs:subClassOf ecg:Entity .
+ecg:SupplierStatus a owl:Class ; rdfs:subClassOf ecg:ProcessState .
+ecg:SourceSystem a owl:Class ; rdfs:subClassOf ecg:Entity .
+ecg:SourceRecord a owl:Class ; rdfs:subClassOf prov:Entity .
+ecg:EntityResolutionCandidate a owl:Class ; rdfs:subClassOf ecg:Entity .
+
+ecg:createdBy a owl:ObjectProperty ; rdfs:domain ecg:BusinessDocument ; rdfs:range ecg:Person .
+ecg:requestedBy a owl:ObjectProperty ; rdfs:domain ecg:PurchaseRequisition ; rdfs:range ecg:Person .
+ecg:ownedByBuyer a owl:ObjectProperty ; rdfs:domain ecg:BusinessDocument ; rdfs:range ecg:Buyer .
+ecg:belongsToBusinessUnit a owl:ObjectProperty ; rdfs:range ecg:BusinessUnit .
+ecg:hasSupplier a owl:ObjectProperty ; rdfs:domain ecg:BusinessDocument ; rdfs:range ecg:Supplier .
+ecg:containsProduct a owl:ObjectProperty ; rdfs:domain ecg:BusinessDocument ; rdfs:range ecg:Product .
+ecg:hasCategory a owl:ObjectProperty ; rdfs:range ecg:ProductCategory .
+ecg:hasApprovedCategory a owl:ObjectProperty ; rdfs:domain ecg:Supplier ; rdfs:range ecg:ProductCategory .
+ecg:permitsCategory a owl:ObjectProperty ; rdfs:domain ecg:Contract ; rdfs:range ecg:ProductCategory .
+ecg:createdFrom a owl:ObjectProperty ; rdfs:domain ecg:PurchaseOrder ; rdfs:range ecg:PurchaseRequisition .
+ecg:governedByContract a owl:ObjectProperty ; rdfs:domain ecg:BusinessDocument ; rdfs:range ecg:Contract .
+ecg:governedByPolicy a owl:ObjectProperty ; rdfs:domain ecg:BusinessDocument ; rdfs:range ecg:Policy .
+ecg:hasState a owl:ObjectProperty ; rdfs:range ecg:ProcessState .
+ecg:hasSupplierStatus a owl:ObjectProperty ; rdfs:domain ecg:Supplier ; rdfs:range ecg:SupplierStatus .
+ecg:hasCanonicalEntity a owl:ObjectProperty ; rdfs:range ecg:Entity .
+ecg:proposedCanonicalEntity a owl:ObjectProperty ; rdfs:domain ecg:EntityResolutionCandidate ; rdfs:range ecg:Entity .
+ecg:hasAlias a owl:DatatypeProperty ; rdfs:range xsd:string .
+ecg:hasSourceSystem a owl:DatatypeProperty ; rdfs:domain ecg:SourceRecord ; rdfs:range xsd:string .
+ecg:hasSourceRecordId a owl:DatatypeProperty ; rdfs:domain ecg:SourceRecord ; rdfs:range xsd:string .
+ecg:sourceName a owl:DatatypeProperty ; rdfs:domain ecg:SourceRecord ; rdfs:range xsd:string .
+ecg:sourceSupplierId a owl:DatatypeProperty ; rdfs:domain ecg:BusinessDocument ; rdfs:range xsd:string .
+ecg:displayStatus a owl:DatatypeProperty ; rdfs:range xsd:string .
+ecg:observedAt a owl:DatatypeProperty ; rdfs:domain ecg:SourceRecord ; rdfs:range xsd:dateTime .
+ecg:resolutionMethod a owl:DatatypeProperty ; rdfs:range xsd:string .
+ecg:permitsAction a owl:ObjectProperty ; rdfs:range ecg:BusinessAction .
+ecg:prohibitsAction a owl:ObjectProperty ; rdfs:range ecg:BusinessAction .
+ecg:approvalLimit a owl:DatatypeProperty ; rdfs:domain ecg:Buyer ; rdfs:range xsd:decimal .
+ecg:canonicalId a owl:DatatypeProperty ; rdfs:domain ecg:Entity ; rdfs:range xsd:string .
+ecg:displayName a owl:DatatypeProperty ; rdfs:domain ecg:Entity ; rdfs:range xsd:string .
+ecg:amount a owl:DatatypeProperty ; rdfs:domain ecg:BusinessDocument ; rdfs:range xsd:decimal .
+ecg:currency a owl:DatatypeProperty ; rdfs:domain ecg:BusinessDocument ; rdfs:range xsd:string .
+ecg:createdAt a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+ecg:startDate a owl:DatatypeProperty ; rdfs:domain ecg:Contract ; rdfs:range xsd:date .
+ecg:endDate a owl:DatatypeProperty ; rdfs:domain ecg:Contract ; rdfs:range xsd:date .
+ecg:riskRating a owl:DatatypeProperty ; rdfs:domain ecg:Supplier ; rdfs:range xsd:string .
+ecg:confidenceScore a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+
+ecg:DRAFT a ecg:ProcessState .
+ecg:SUBMITTED a ecg:ProcessState .
+ecg:APPROVED a ecg:ProcessState .
+ecg:REJECTED a ecg:ProcessState .
+ecg:CLOSED a ecg:ProcessState .
+ecg:CONVERTED a ecg:ProcessState .
+ecg:ACTIVE a ecg:SupplierStatus .
+ecg:BLOCKED a ecg:SupplierStatus .
+ecg:SUSPENDED a ecg:SupplierStatus .
+ecg:UNDER_REVIEW a ecg:SupplierStatus .
+
+ecg:CREATE_PURCHASE_ORDER a ecg:BusinessAction ; rdfs:label "Create purchase order" .
+ecg:SUBMIT_REQUISITION a ecg:BusinessAction ; rdfs:label "Submit requisition" .
+ecg:APPROVE_REQUISITION a ecg:BusinessAction ; rdfs:label "Approve requisition" .
+ecg:CANCEL_PURCHASE_ORDER a ecg:BusinessAction ; rdfs:label "Cancel purchase order" .
+
+prov:wasDerivedFrom a owl:ObjectProperty .

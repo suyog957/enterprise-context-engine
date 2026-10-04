@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Web
+node_modules/
+dist/
+*.tsbuildinfo
+/apps/web/vite.config.js
+/apps/web/vite.config.d.ts
+/package-lock.json
+
+# Local configuration and data
+.env
+.env.*.local
+!.env.example
+data/raw/generated/
+data/golden/generated/
+data/canonical/generated/
+data/evaluation/generated/
+data/runtime/
+
+# IDE / OS
+.vscode/
+.DS_Store
+Thumbs.db

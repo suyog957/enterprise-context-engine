@@ -1,0 +1,52 @@
+@prefix ecg: <https://example.org/enterprise-context#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+<https://example.org/enterprise-context/taxonomy> a skos:ConceptScheme ;
+    skos:prefLabel "Enterprise procurement product categories"@en .
+
+ecg:Technology a skos:Concept ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Technology"@en .
+ecg:Software a skos:Concept, ecg:ProductCategory ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Software"@en ;
+    skos:altLabel "Applications"@en ;
+    skos:broader ecg:Technology .
+ecg:Hardware a skos:Concept, ecg:ProductCategory ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Hardware"@en ;
+    skos:broader ecg:Technology .
+ecg:CloudServices a skos:Concept, ecg:ProductCategory ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Cloud Services"@en ;
+    skos:altLabel "Cloud"@en ;
+    skos:broader ecg:Technology .
+
+ecg:ProfessionalServices a skos:Concept ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Professional Services"@en .
+ecg:Consulting a skos:Concept, ecg:ProductCategory ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Consulting"@en ;
+    skos:broader ecg:ProfessionalServices .
+ecg:Legal a skos:Concept, ecg:ProductCategory ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Legal"@en ;
+    skos:broader ecg:ProfessionalServices .
+ecg:Accounting a skos:Concept, ecg:ProductCategory ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Accounting"@en ;
+    skos:broader ecg:ProfessionalServices .
+
+ecg:Facilities a skos:Concept ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Facilities"@en .
+ecg:OfficeSupplies a skos:Concept, ecg:ProductCategory ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Office Supplies"@en ;
+    skos:altLabel "Office products"@en ;
+    skos:broader ecg:Facilities .
+ecg:Maintenance a skos:Concept, ecg:ProductCategory ;
+    skos:inScheme <https://example.org/enterprise-context/taxonomy> ;
+    skos:prefLabel "Maintenance"@en ;
+    skos:broader ecg:Facilities .

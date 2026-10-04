@@ -1,0 +1,1 @@
+"""OpenSearch document indexing and hybrid retrieval."""
