@@ -122,3 +122,10 @@ def test_structured_output_rejects_non_conforming_text() -> None:
         complete_structured(
             MockLLM(default="not json"), [ChatMessage(role="user", content="x")], GeneratedSparql
         )
+
+
+def test_specific_count_questions_are_not_answered_by_the_generic_rule() -> None:
+    service, store = nl_query([{"blockedSuppliers": "17"}])
+    service.answer("How many suppliers are blocked?", principal(["BUYER"]))
+
+    assert "ecg:BLOCKED" in store.queries[0]

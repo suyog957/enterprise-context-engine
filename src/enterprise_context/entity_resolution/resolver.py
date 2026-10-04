@@ -17,6 +17,7 @@ from enterprise_context.entity_resolution.normalization import (
 )
 
 AUTO_MERGE_THRESHOLD = 0.95
+SYSTEM_OF_RECORD = "ERP"
 REVIEW_THRESHOLD = 0.80
 _GENERIC_NAME_TOKENS = {
     "and",
@@ -126,8 +127,14 @@ def resolve_supplier_records(
     name_index: dict[tuple[str, str], set[str]] = defaultdict(set)
     results: list[EntityResolutionResult] = []
 
+    # The ERP system of record seeds canonical entities; other sources merge into them.
     ordered_records = sorted(
-        records, key=lambda record: (record.source_system, record.source_record_id)
+        records,
+        key=lambda record: (
+            record.source_system != SYSTEM_OF_RECORD,
+            record.source_system,
+            record.source_record_id,
+        ),
     )
     for record in ordered_records:
         normalized_name = normalize_supplier_name(record.supplier_name)

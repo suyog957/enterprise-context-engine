@@ -21,6 +21,8 @@ from enterprise_context.agents.procurement import (
     AgentResponse,
 )
 from enterprise_context.config import get_settings
+from enterprise_context.context_engine.dependencies import get_context_engine
+from enterprise_context.context_engine.models import ContextEnvelope
 from enterprise_context.database import check_database
 from enterprise_context.domain.action_discovery import (
     AllowedActionsResponse,
@@ -333,6 +335,19 @@ def run_analytics_query(
         raise HTTPException(status_code=403, detail=str(error)) from error
     except SqlCatalogError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+class ContextRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+@app.post("/context", response_model=ContextEnvelope, tags=["context"])
+def build_context(
+    request: ContextRequest,
+    principal: Annotated[PrincipalContext, Depends(get_current_principal)],
+) -> ContextEnvelope:
+    """Authorized, routed context for a question without invoking the agent."""
+    return get_context_engine().build(request.question, principal)
 
 
 @app.get("/tools", tags=["agent"])

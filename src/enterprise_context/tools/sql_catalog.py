@@ -54,6 +54,11 @@ class StateParams(Page):
     state: str = Field(pattern=r"^(DRAFT|SUBMITTED|APPROVED|REJECTED|CLOSED|CONVERTED)$")
 
 
+class NameParams(Page):
+    # LIKE wildcards are rejected so caller input cannot widen the match.
+    name: str = Field(min_length=2, max_length=80, pattern=r"^[^%_\\]+$")
+
+
 class NoParams(Page):
     pass
 
@@ -152,6 +157,18 @@ CATALOG: dict[str, CatalogQuery] = {
                 WHERE pr.state = %(state)s
                   AND (%(global_scope)s OR pr.business_unit_id = ANY(%(business_unit_ids)s))
                 ORDER BY pr.created_at DESC, pr.requisition_id
+                LIMIT %(limit_plus_one)s OFFSET %(offset)s""",
+        ),
+        CatalogQuery(
+            name="find_buyers",
+            description="Buyers whose name contains the given text (case-insensitive).",
+            params=NameParams,
+            sql="""
+                SELECT b.buyer_id, b.name AS buyer_name, b.business_unit_id
+                FROM buyer b
+                WHERE b.name ILIKE '%%' || %(name)s || '%%'
+                  AND (%(global_scope)s OR b.business_unit_id = ANY(%(business_unit_ids)s))
+                ORDER BY b.name
                 LIMIT %(limit_plus_one)s OFFSET %(offset)s""",
         ),
         CatalogQuery(

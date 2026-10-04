@@ -2,7 +2,8 @@
 
 They stand in for a real model in tests and the offline demo, so the generated-SPARQL
 and intent-fallback paths are exercised (including an adversarial mutation attempt
-that the read-only guard must reject) without network access.
+that the read-only guard must reject) without network access. Rules are evaluated in
+order, so specific questions must precede generic ones.
 """
 
 from __future__ import annotations
@@ -23,10 +24,17 @@ DEFAULT_MOCK_RULES: tuple[tuple[str, str], ...] = (
         json.dumps({"sparql": "DELETE WHERE { ?s ?p ?o }"}),
     ),
     (
-        r"Question:[^\n]*how many suppliers",
+        r"Question:[^\n]*how many[^\n]*suppliers[^\n]*blocked",
         _sparql(
-            "SELECT (COUNT(DISTINCT ?supplier) AS ?suppliers) "
-            "WHERE { ?supplier a ecg:Supplier } LIMIT 1"
+            "SELECT (COUNT(DISTINCT ?supplier) AS ?blockedSuppliers) "
+            "WHERE { ?supplier ecg:hasSupplierStatus ecg:BLOCKED } LIMIT 1"
+        ),
+    ),
+    (
+        r"Question:[^\n]*how many[^\n]*high[- ]risk suppliers",
+        _sparql(
+            "SELECT (COUNT(DISTINCT ?supplier) AS ?highRiskSuppliers) "
+            'WHERE { ?supplier a ecg:Supplier ; ecg:riskRating "HIGH" } LIMIT 1'
         ),
     ),
     (
@@ -53,5 +61,12 @@ DEFAULT_MOCK_RULES: tuple[tuple[str, str], ...] = (
     (
         r"Question:[^\n]*(hallucinat|nonexistent predicate)",
         _sparql("SELECT ?s WHERE { ?s ecg:hasMagicProperty ?o } LIMIT 5"),
+    ),
+    (
+        r"Question:[^\n]*how many suppliers",
+        _sparql(
+            "SELECT (COUNT(DISTINCT ?supplier) AS ?suppliers) "
+            "WHERE { ?supplier a ecg:Supplier } LIMIT 1"
+        ),
     ),
 )
