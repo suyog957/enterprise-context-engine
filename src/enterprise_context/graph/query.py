@@ -6,9 +6,9 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, Field
 from rdflib import Literal
-from rdflib.plugins.sparql.parser import parseQuery, parseUpdate
 from rdflib.plugins.sparql.parserutils import CompValue
 
+from enterprise_context.graph.sparql_parsing import parse_query, parse_update
 from enterprise_context.observability.tracing import observed_store_call
 
 
@@ -45,7 +45,7 @@ def _walk_ast(value: Any) -> Iterator[CompValue]:
 
 def _is_update(query: str) -> bool:
     try:
-        parseUpdate(query)
+        parse_update(query)
     except Exception:
         return False
     return True
@@ -58,7 +58,7 @@ def validate_readonly_sparql(query: str, *, max_results: int = 100) -> tuple[str
     rejected so a query cannot leave the current projection or reach remote endpoints.
     """
     try:
-        parsed = parseQuery(query)
+        parsed = parse_query(query)
     except Exception as error:
         if _is_update(query):
             raise GraphQueryValidationError("Mutation queries are not permitted") from error

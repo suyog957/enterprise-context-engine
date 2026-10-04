@@ -149,3 +149,16 @@ def test_named_graph_publication_uses_ntriples_and_admin_auth() -> None:
             admin_password="local-password",
             client=client,
         ).put_named_graph("urn:ecg:graph:context:v2", b"<urn:a> <urn:b> <urn:c> .\n")
+
+
+def test_concurrent_validation_of_valid_queries_never_fails() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    query = (
+        "PREFIX ecg: <https://example.org/enterprise-context#> "
+        "SELECT DISTINCT ?x WHERE { ?f ecg:a|(ecg:b/ecg:c) ?x FILTER(?x IN (<urn:a>)) } LIMIT 5"
+    )
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(lambda _: validate_readonly_sparql(query), range(200)))
+
+    assert results == [("SelectQuery", 5)] * 200

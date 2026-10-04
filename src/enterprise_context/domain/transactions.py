@@ -539,7 +539,24 @@ class ProcurementTransactions:
         decision: PolicyDecision,
     ) -> bool:
         if approval_id is None:
-            return False
+            # No explicit reference: use the requester's newest granted approval for this
+            # resource version and policy; every binding check below still applies.
+            latest: Any = connection.execute(
+                """SELECT approval_id FROM approval_request
+                   WHERE requester_id = %s AND action_type = 'CREATE_PURCHASE_ORDER'
+                     AND resource_id = %s AND resource_version = %s AND policy_version = %s
+                     AND status = 'APPROVED' AND expires_at > now()
+                   ORDER BY decided_at DESC LIMIT 1""",
+                (
+                    principal.principal_id,
+                    context.requisition_id,
+                    context.row_version,
+                    decision.policy_version,
+                ),
+            ).fetchone()
+            if latest is None:
+                return False
+            approval_id = latest["approval_id"]
         approval: Any = connection.execute(
             """SELECT requester_id, action_type, resource_id, arguments, resource_version,
                       policy_version, status, expires_at

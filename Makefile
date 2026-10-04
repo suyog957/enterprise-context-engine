@@ -6,7 +6,8 @@ PY ?= $(TOOLS) python
 
 .PHONY: up down tools-build web-install web-build lint typecheck test test-integration \
 	migrate data-generate resolve-entities data-ingest build-graph build-search-index \
-	pipeline evaluate-smoke evaluate check rebuild-projections process-outbox \n	test-e2e audit evaluate-full
+	pipeline evaluate-smoke evaluate check rebuild-projections process-outbox \
+	test-e2e audit evaluate-full
 
 up:
 	docker compose up -d --build

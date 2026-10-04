@@ -543,6 +543,49 @@ def latest_evaluation(
     return payload
 
 
+@app.get("/me", response_model=PrincipalContext, tags=["identity"])
+def current_principal(
+    principal: Annotated[PrincipalContext, Depends(get_current_principal)],
+) -> PrincipalContext:
+    """The authenticated principal, its roles and business-unit scope."""
+    return principal
+
+
+@app.get("/data-quality", tags=["evaluation"])
+def data_quality(
+    principal: Annotated[PrincipalContext, Depends(get_current_principal)],
+) -> dict[str, Any]:
+    """Retained data-quality issues: SQL-level findings (scoped) and SHACL quarantine."""
+    try:
+        sql = get_sql_catalog().run("data_quality_summary", {}, principal)
+    except SqlAuthorizationError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except SqlCatalogError as error:
+        raise HTTPException(status_code=503, detail="database_unavailable") from error
+    generated = settings.data_dir / "canonical" / "generated"
+    graph: dict[str, Any] = {}
+    try:
+        summary = json.loads((generated / "graph_build_summary.json").read_text(encoding="utf-8"))
+        graph = {
+            key: summary.get(key)
+            for key in (
+                "conforms",
+                "input_triples",
+                "inferred_triples",
+                "output_triples",
+                "quarantined_nodes",
+                "validation_results",
+            )
+        }
+        quarantine_lines = (
+            (generated / "shacl_quarantine.jsonl").read_text(encoding="utf-8").splitlines()
+        )
+        graph["quarantine_sample"] = [json.loads(line) for line in quarantine_lines[:20] if line]
+    except (OSError, json.JSONDecodeError):
+        graph = {"available": False}
+    return {"issues": sql.rows, "scope": sql.scope, "graph_validation": graph}
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exception: Exception) -> JSONResponse:
     del request, exception

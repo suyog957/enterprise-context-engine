@@ -126,6 +126,9 @@ jobs:
           $T python scripts/build_search_index.py
       - name: End-to-end tests
         run: docker compose --profile tools run --rm -T -e E2E_API_URL=http://api:8000 tools pytest -m e2e -v
+      - name: Browser smoke tests (Playwright, desktop and mobile)
+        run: |
+          docker run --rm --network ontology_default -v "$PWD/apps/web":/src:ro             -e WEB_BASE_URL=http://web -e CI=1 mcr.microsoft.com/playwright:v1.63.0-noble sh -c             'mkdir -p /tmp/w && cp -r /src/package.json /src/package-lock.json /src/playwright.config.ts /src/e2e /tmp/w/ && cd /tmp/w && npm ci --ignore-scripts && npx playwright test'
       - name: Full evaluation (critical gates fail the build)
         run: docker compose --profile tools run --rm -T tools python scripts/run_evaluation.py --suite full --fail-on-regression
       - name: Upload evaluation report
@@ -151,6 +154,9 @@ jobs:
       - run: npm ci
         working-directory: apps/web
       - run: npm run build
+        working-directory: apps/web
+      - name: Component and client tests (Vitest)
+        run: npm test
         working-directory: apps/web
       - name: npm audit (high and critical)
         run: npm audit --audit-level=high --omit=dev

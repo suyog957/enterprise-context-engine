@@ -1,35 +1,28 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-
-const apiProxy = { target: "http://localhost:8000", changeOrigin: true };
-const apiPaths = [
-  "/health",
-  "/chat",
-  "/requisitions",
-  "/approvals",
-  "/entities",
-  "/graph",
-  "/search",
-  "/traces",
-  "/evaluation",
-];
-const proxy = apiPaths.reduce<Record<string, typeof apiProxy>>((routes, path) => {
-  routes[path] = apiProxy;
-  return routes;
-}, {});
 
 export default defineConfig({
   plugins: [react()],
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          cytoscape: ["cytoscape"],
-        },
+        manualChunks: { cytoscape: ["cytoscape"] },
       },
     },
   },
   server: {
-    proxy,
+    proxy: {
+      "/api": {
+        target: process.env.API_PROXY_TARGET ?? "http://localhost:8000",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
+    },
+  },
+  test: {
+    environment: "jsdom",
+    include: ["src/**/*.test.{ts,tsx}"],
+    setupFiles: ["src/test-setup.ts"],
   },
 });

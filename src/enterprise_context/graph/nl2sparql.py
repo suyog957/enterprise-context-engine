@@ -15,7 +15,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 from rdflib import OWL, RDF, RDFS, Graph, URIRef
-from rdflib.plugins.sparql import prepareQuery
 from rdflib.plugins.sparql.parserutils import CompValue
 
 from enterprise_context.graph.query import (
@@ -23,6 +22,7 @@ from enterprise_context.graph.query import (
     GraphQueryValidationError,
     validate_readonly_sparql,
 )
+from enterprise_context.graph.sparql_parsing import prepare_query
 from enterprise_context.graph.templates import ECG, GLOBAL_READ_ROLES, PREFIXES, RESOURCE_BASE
 from enterprise_context.llm.providers import ChatMessage, LLMError, LLMProvider, complete_structured
 from enterprise_context.observability.tracing import traced
@@ -95,7 +95,7 @@ def _walk(value: Any) -> Iterator[Any]:
 
 
 def ecg_terms(query: str) -> set[str]:
-    algebra = prepareQuery(query).algebra
+    algebra = prepare_query(query).algebra
     return {
         str(node)
         for node in _walk(algebra)
