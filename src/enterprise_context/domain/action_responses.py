@@ -1,17 +1,5 @@
-from typing import Literal
+"""Backwards-compatible import location for action discovery response models."""
 
-from pydantic import BaseModel
+from enterprise_context.domain.action_discovery import ActionAvailability, AllowedActionsResponse
 
-
-class ActionAvailability(BaseModel):
-    action: str
-    status: Literal["AVAILABLE", "APPROVAL_REQUIRED", "BLOCKED"]
-    reason_codes: list[str]
-    explanations: list[str]
-
-
-class AllowedActionsResponse(BaseModel):
-    requisition_id: str
-    available_actions: list[str]
-    actions: list[ActionAvailability]
-    policy_version: str
+__all__ = ["ActionAvailability", "AllowedActionsResponse"]

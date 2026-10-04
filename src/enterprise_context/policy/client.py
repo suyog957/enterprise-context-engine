@@ -66,3 +66,33 @@ class OPAClient:
         finally:
             if owns_client:
                 client.close()
+
+    def evaluate_actions(self, policy_input: ProcurementPolicyInput) -> dict[str, PolicyDecision]:
+        """Evaluate every catalog action for the same facts in one OPA call."""
+        owns_client = self._client is None
+        client = self._client or httpx.Client(timeout=self._timeout_seconds)
+        try:
+            with observed_store_call(
+                "opa",
+                "evaluate_actions",
+                **{"ecg.resource_id": policy_input.requisition.requisition_id},
+            ):
+                response = client.post(
+                    f"{self._base_url}/v1/data/procurement/action_decisions",
+                    json={"input": policy_input.model_dump(mode="json")},
+                )
+                response.raise_for_status()
+                result: Any = response.json().get("result")
+                if not isinstance(result, dict) or not result:
+                    raise PolicyServiceError("OPA returned no action decisions")
+                return {
+                    str(action): PolicyDecision.model_validate(value)
+                    for action, value in result.items()
+                }
+        except (httpx.HTTPError, ValueError) as error:
+            if isinstance(error, PolicyServiceError):
+                raise
+            raise PolicyServiceError("OPA action evaluation failed") from error
+        finally:
+            if owns_client:
+                client.close()

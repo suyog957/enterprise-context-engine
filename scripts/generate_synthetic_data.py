@@ -10,6 +10,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_TIME = datetime(2025, 1, 15, 12, 0, tzinfo=timezone.utc)
+# Purchase orders are spread over the 30 months before this fixed as-of date so
+# period questions ("spend last year") have deterministic answers.
+ORDER_HISTORY_END = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
 CATEGORIES = [
     "Software",
     "Hardware",
@@ -297,7 +300,10 @@ def generate(seed: int, output_root: Path) -> dict[str, int]:
         supplier_id = f"SUP-{index % len(suppliers):04d}"
         if index % 97 == 0:
             supplier_id = f"UNKNOWN-{index:04d}"
-        po_amount: str | None = None if index % 20 == 0 else f"{1000 + (index * 613) % 80000}.00"
+        # Every 20th order lacks an amount (offset so demo suppliers keep priced orders).
+        po_amount: str | None = (
+            None if index % 20 == 13 else f"{1000 + (index * 613) % 80000}.00"
+        )
         purchase_orders.append(
             {
                 "purchase_order_id": f"PO-{5001 + index}",
@@ -307,6 +313,7 @@ def generate(seed: int, output_root: Path) -> dict[str, int]:
                 "amount": po_amount,
                 "currency": CURRENCIES[index % len(CURRENCIES)],
                 "status": ["OPEN", "RECEIVED", "CANCELLED"][index % 3],
+                "ordered_at": (ORDER_HISTORY_END - timedelta(days=(index * 37) % 900)).isoformat(),
                 "source_system": "ERP",
                 "source_record_id": f"ORDER-{5001 + index}",
                 "observed_at": BASE_TIME.isoformat(),

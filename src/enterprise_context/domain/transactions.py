@@ -42,9 +42,27 @@ class ProcurementTransactions:
         self,
         settings: Settings,
         policy_evaluator: Callable[[ProcurementPolicyInput], PolicyDecision] | None = None,
+        catalog_evaluator: (
+            Callable[[ProcurementPolicyInput], dict[str, PolicyDecision]] | None
+        ) = None,
     ) -> None:
         self._settings = settings
         self._policy_evaluator = policy_evaluator
+        self._catalog_evaluator = catalog_evaluator
+
+    def evaluate_action_catalog(
+        self, context: RequisitionContext, principal: PrincipalContext
+    ) -> dict[str, PolicyDecision]:
+        """OPA decisions for every catalog action; CREATE_PURCHASE_ORDER is approval-aware."""
+        create_po = self.evaluate_action(context, principal)
+        policy_input = build_create_po_policy_input(context, principal)
+        if self._catalog_evaluator is not None:
+            others = self._catalog_evaluator(policy_input)
+        elif self._policy_evaluator is not None:
+            others = {}
+        else:
+            others = OPAClient(self._settings.opa_url).evaluate_actions(policy_input)
+        return {**others, "CREATE_PURCHASE_ORDER": create_po}
 
     def simulate(self, requisition_id: str, principal: PrincipalContext) -> ActionSimulation:
         with psycopg.connect(

@@ -2,14 +2,15 @@ package procurement
 
 import rego.v1
 
-policy_version := "0.1.0"
+policy_version := "0.2.0"
 
 default decision := {
   "allowed": false,
   "approval_required": false,
   "reason_codes": ["POLICY_INPUT_INVALID"],
   "explanations": ["Required policy input is missing or invalid."],
-  "policy_version": "0.1.0",
+  "policy_rules": [],
+  "policy_version": "0.2.0",
 }
 
 decision := {
@@ -17,6 +18,7 @@ decision := {
   "approval_required": approval_required,
   "reason_codes": reason_codes,
   "explanations": explanations,
+  "policy_rules": [rule_refs[code] | some code in reason_codes; rule_refs[code]],
   "policy_version": policy_version,
 } if {
   is_number(input.requisition.amount_minor)
@@ -112,3 +114,77 @@ explanations := [messages[code] |
   code := reason_codes[_]
   messages[code]
 ]
+
+# Policy rule identifiers and the policy documents that state them, so every reason
+# code can be traced to a citable rule.
+rule_refs := {
+  "REQUISITION_NOT_APPROVED": {"rule_id": "REQ-001", "document_id": "POL-004", "reason_code": "REQUISITION_NOT_APPROVED"},
+  "SUPPLIER_BLOCKED": {"rule_id": "SUP-004", "document_id": "POL-000", "reason_code": "SUPPLIER_BLOCKED"},
+  "SUPPLIER_NOT_ACTIVE": {"rule_id": "SUP-003", "document_id": "POL-000", "reason_code": "SUPPLIER_NOT_ACTIVE"},
+  "CATEGORY_NOT_APPROVED": {"rule_id": "CAT-002", "document_id": "POL-003", "reason_code": "CATEGORY_NOT_APPROVED"},
+  "MANAGER_APPROVAL_REQUIRED": {"rule_id": "APR-001", "document_id": "POL-001", "reason_code": "MANAGER_APPROVAL_REQUIRED"},
+  "USER_NOT_AUTHORIZED": {"rule_id": "AUTH-001", "document_id": "POL-001", "reason_code": "USER_NOT_AUTHORIZED"},
+  "BUSINESS_UNIT_MISMATCH": {"rule_id": "AUTH-002", "document_id": "POL-001", "reason_code": "BUSINESS_UNIT_MISMATCH"},
+  "STATE_NOT_ELIGIBLE": {"rule_id": "REQ-002", "document_id": "POL-004", "reason_code": "STATE_NOT_ELIGIBLE"},
+  "ROLE_NOT_PERMITTED": {"rule_id": "AUTH-003", "document_id": "POL-001", "reason_code": "ROLE_NOT_PERMITTED"},
+  "SUPPLIER_MANAGEMENT_PERMISSION_REQUIRED": {"rule_id": "AUTH-004", "document_id": "POL-000", "reason_code": "SUPPLIER_MANAGEMENT_PERMISSION_REQUIRED"},
+}
+
+# ---------------------------------------------------------------------------
+# Action catalog: every candidate action for a requisition is evaluated against the
+# same input, so action discovery and execution share one policy bundle.
+# ---------------------------------------------------------------------------
+
+lifecycle_actions := {
+  "SUBMIT_REQUISITION": {"states": {"DRAFT"}, "roles": {"BUYER", "MANAGER", "ADMIN"}},
+  "APPROVE_REQUISITION": {"states": {"SUBMITTED"}, "roles": {"MANAGER", "ADMIN"}},
+  "REJECT_REQUISITION": {"states": {"SUBMITTED"}, "roles": {"MANAGER", "ADMIN"}},
+  "CANCEL_REQUISITION": {"states": {"DRAFT", "SUBMITTED", "APPROVED"}, "roles": {"BUYER", "MANAGER", "ADMIN"}},
+}
+
+lifecycle_blockers(name) := codes if {
+  rule := lifecycle_actions[name]
+  codes := {code |
+    some code in ["STATE_NOT_ELIGIBLE", "ROLE_NOT_PERMITTED", "BUSINESS_UNIT_MISMATCH"]
+    lifecycle_violation(code, rule)
+  }
+}
+
+lifecycle_violation("STATE_NOT_ELIGIBLE", rule) if not input.requisition.state in rule.states
+
+lifecycle_violation("ROLE_NOT_PERMITTED", rule) if {
+  count({role | some role in input.principal.roles; role in rule.roles}) == 0
+}
+
+lifecycle_violation("BUSINESS_UNIT_MISMATCH", _) if {
+  not data.authorization.in_business_unit(input.principal, input.requisition)
+}
+
+action_decision(codes) := {
+  "allowed": count(codes) == 0,
+  "approval_required": false,
+  "reason_codes": sorted_codes,
+  "explanations": [action_messages[code] | some code in sorted_codes],
+  "policy_rules": [rule_refs[code] | some code in sorted_codes],
+  "policy_version": policy_version,
+} if {
+  sorted_codes := sort([code | some code in codes])
+}
+
+action_messages := object.union(messages, {
+  "STATE_NOT_ELIGIBLE": "The requisition's current state does not permit this action.",
+  "ROLE_NOT_PERMITTED": "The principal's roles do not permit this action.",
+  "SUPPLIER_MANAGEMENT_PERMISSION_REQUIRED": "Editing supplier master data requires supplier-management (ADMIN) permission.",
+})
+
+edit_supplier_codes := set() if {
+  "ADMIN" in input.principal.roles
+} else := {"SUPPLIER_MANAGEMENT_PERMISSION_REQUIRED"}
+
+action_decisions := object.union(
+  {name: action_decision(lifecycle_blockers(name)) | some name, _ in lifecycle_actions},
+  {
+    "CREATE_PURCHASE_ORDER": decision,
+    "EDIT_SUPPLIER": action_decision(edit_supplier_codes),
+  },
+)

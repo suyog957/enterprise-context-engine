@@ -269,6 +269,9 @@ def build_context_graph(
             graph.add((purchase_order, ECG.createdFrom, source_requisition))
         graph.add((purchase_order, ECG.currency, Literal(str(record["currency"]))))
         graph.add((purchase_order, ECG.displayStatus, Literal(str(record["status"]))))
+        if record.get("ordered_at"):
+            ordered_at = Literal(record["ordered_at"], datatype=XSD.dateTime)
+            graph.add((purchase_order, ECG.createdAt, ordered_at))
         if record.get("amount") is not None:
             try:
                 po_amount: Decimal | None = Decimal(str(record["amount"]))
@@ -292,6 +295,40 @@ def build_context_graph(
         for category in record.get("permitted_categories", []):
             graph.add((contract, ECG.permitsCategory, _category_uri(str(category))))
         _source_assertion(graph, contract, record)
+
+    # A requisition is governed by an active contract with the same supplier that
+    # permits at least one of the requisition's product categories.
+    active_contracts_by_supplier: dict[URIRef, list[tuple[URIRef, set[str]]]] = {}
+    for record in contract_records:
+        contract_supplier = supplier_by_source_key.get(str(record["supplier_id"]))
+        if contract_supplier is None or record.get("status") != "ACTIVE":
+            continue
+        active_contracts_by_supplier.setdefault(contract_supplier, []).append(
+            (
+                _uri("contract", str(record["contract_id"])),
+                {str(category) for category in record.get("permitted_categories", [])},
+            )
+        )
+    product_categories = {
+        product_node: {
+            str(label) for label in graph.objects(category, SKOS.prefLabel)
+        }
+        for product_node in product_nodes.values()
+        for category in graph.objects(product_node, ECG.hasCategory)
+    }
+    for requisition in requisition_nodes.values():
+        requisition_supplier_node = graph.value(requisition, ECG.hasSupplier)
+        if not isinstance(requisition_supplier_node, URIRef):
+            continue
+        requisition_categories: set[str] = set()
+        for product in graph.objects(requisition, ECG.containsProduct):
+            if isinstance(product, URIRef):
+                requisition_categories |= product_categories.get(product, set())
+        for contract, permitted in active_contracts_by_supplier.get(
+            requisition_supplier_node, []
+        ):
+            if permitted & requisition_categories:
+                graph.add((requisition, ECG.governedByContract, contract))
 
     pre_inference_size = len(graph)
     inferred_triple_count = _apply_subclass_inference(graph)

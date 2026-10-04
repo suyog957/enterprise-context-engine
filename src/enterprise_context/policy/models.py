@@ -35,9 +35,16 @@ class ProcurementPolicyInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class PolicyRuleRef(BaseModel):
+    rule_id: str
+    document_id: str
+    reason_code: str
+
+
 class PolicyDecision(BaseModel):
     allowed: bool
     approval_required: bool
     reason_codes: list[str]
     explanations: list[str]
     policy_version: str
+    policy_rules: list[PolicyRuleRef] = Field(default_factory=list)

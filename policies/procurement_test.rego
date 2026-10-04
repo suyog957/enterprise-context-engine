@@ -57,3 +57,37 @@ test_business_unit_mismatch_is_denied if {
   not decision.allowed
   "BUSINESS_UNIT_MISMATCH" in decision.reason_codes
 }
+
+test_blocked_supplier_cites_rule_sup_004 if {
+  blocked_supplier := object.union(base_input.supplier, {"status": "BLOCKED"})
+  test_input := object.union(base_input, {"supplier": blocked_supplier})
+  decision := data.procurement.decision with input as test_input
+  some rule in decision.policy_rules
+  rule.rule_id == "SUP-004"
+}
+
+test_action_catalog_for_approved_requisition if {
+  decisions := data.procurement.action_decisions with input as base_input
+  decisions.CREATE_PURCHASE_ORDER.allowed
+  decisions.CANCEL_REQUISITION.allowed
+  not decisions.APPROVE_REQUISITION.allowed
+  "STATE_NOT_ELIGIBLE" in decisions.APPROVE_REQUISITION.reason_codes
+  not decisions.EDIT_SUPPLIER.allowed
+  decisions.EDIT_SUPPLIER.reason_codes == ["SUPPLIER_MANAGEMENT_PERMISSION_REQUIRED"]
+}
+
+test_manager_can_approve_submitted_requisition_in_scope if {
+  submitted := object.union(base_input.requisition, {"state": "SUBMITTED"})
+  manager := object.union(base_input.principal, {"roles": ["BUYER", "MANAGER"]})
+  test_input := object.union(base_input, {"requisition": submitted, "principal": manager})
+  decisions := data.procurement.action_decisions with input as test_input
+  decisions.APPROVE_REQUISITION.allowed
+  decisions.SUBMIT_REQUISITION.reason_codes == ["STATE_NOT_ELIGIBLE"]
+}
+
+test_buyer_cannot_approve_and_out_of_scope_is_blocked if {
+  submitted := object.union(base_input.requisition, {"state": "SUBMITTED", "business_unit_id": "BU-009"})
+  test_input := object.union(base_input, {"requisition": submitted})
+  decisions := data.procurement.action_decisions with input as test_input
+  decisions.APPROVE_REQUISITION.reason_codes == ["BUSINESS_UNIT_MISMATCH", "ROLE_NOT_PERMITTED"]
+}

@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import time
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 import psycopg
@@ -22,9 +22,9 @@ from enterprise_context.agents.procurement import (
 )
 from enterprise_context.config import get_settings
 from enterprise_context.database import check_database
-from enterprise_context.domain.action_responses import (
-    ActionAvailability,
+from enterprise_context.domain.action_discovery import (
     AllowedActionsResponse,
+    build_allowed_actions,
 )
 from enterprise_context.domain.entities import (
     EntityContextResponse,
@@ -47,21 +47,38 @@ from enterprise_context.domain.write_models import (
     PurchaseOrderExecution,
 )
 from enterprise_context.graph.dependencies import get_graph_store
+from enterprise_context.graph.nl2sparql import GraphAnswer, SparqlGenerationError
 from enterprise_context.graph.query import (
     GraphQueryError,
     GraphQueryResult,
     GraphQueryValidationError,
+)
+from enterprise_context.graph.templates import (
+    GraphTemplateError,
+    GraphTemplateResult,
+    GraphTemplateService,
 )
 from enterprise_context.observability.context import current_trace_id, set_request_id
 from enterprise_context.observability.jaeger import fetch_trace_summary
 from enterprise_context.observability.logging import configure_logging
 from enterprise_context.observability.tracing import configure_tracing
 from enterprise_context.policy.client import PolicyServiceError
-from enterprise_context.policy.models import PolicyDecision
 from enterprise_context.retrieval.dependencies import get_search_retriever
 from enterprise_context.retrieval.models import SearchRequest, SearchResponse
 from enterprise_context.retrieval.opensearch import OpenSearchError
 from enterprise_context.security.principals import PrincipalContext, get_current_principal
+from enterprise_context.tools.dependencies import (
+    get_graph_template_service,
+    get_nl_graph_query,
+    get_sql_catalog,
+    get_tool_registry,
+)
+from enterprise_context.tools.sql_catalog import (
+    SqlAuthorizationError,
+    SqlCatalog,
+    SqlCatalogError,
+    SqlQueryResult,
+)
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -148,9 +165,7 @@ def allowed_requisition_actions(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="requisition_not_found")
 
     try:
-        decision: PolicyDecision = get_procurement_transactions().evaluate_action(
-            context, principal
-        )
+        decisions = get_procurement_transactions().evaluate_action_catalog(context, principal)
     except TransactionError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except PolicyServiceError as error:
@@ -158,26 +173,7 @@ def allowed_requisition_actions(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="policy_service_unavailable",
         ) from error
-
-    if decision.allowed:
-        action_status: Literal["AVAILABLE", "APPROVAL_REQUIRED", "BLOCKED"] = "AVAILABLE"
-    elif decision.approval_required:
-        action_status = "APPROVAL_REQUIRED"
-    else:
-        action_status = "BLOCKED"
-    return AllowedActionsResponse(
-        requisition_id=context.requisition_id,
-        available_actions=["CREATE_PURCHASE_ORDER"] if decision.allowed else [],
-        actions=[
-            ActionAvailability(
-                action="CREATE_PURCHASE_ORDER",
-                status=action_status,
-                reason_codes=decision.reason_codes,
-                explanations=decision.explanations,
-            )
-        ],
-        policy_version=decision.policy_version,
-    )
+    return build_allowed_actions(context, decisions)
 
 
 @app.post("/entities/resolve", response_model=EntityResolveResponse, tags=["entities"])
@@ -246,19 +242,105 @@ class GraphQueryRequest(BaseModel):
     query: str = Field(min_length=1, max_length=5000)
 
 
+class GraphTemplateRequest(BaseModel):
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphQuestionRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+
+
+class AnalyticsRequest(BaseModel):
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
 @app.post("/graph/query", response_model=GraphQueryResult, tags=["graph"])
 def query_graph(
     request: GraphQueryRequest,
     principal: Annotated[PrincipalContext, Depends(get_current_principal)],
 ) -> GraphQueryResult:
-    if not {"BUYER", "MANAGER", "ADMIN", "AUDITOR"}.intersection(principal.roles):
-        raise HTTPException(status_code=403, detail="graph_read_permission_required")
+    """Raw read-only SPARQL. The RDF projection is not business-unit partitioned, so raw
+    queries are limited to global readers; scoped access goes through templates."""
+    if not {"ADMIN", "AUDITOR"}.intersection(principal.roles):
+        raise HTTPException(status_code=403, detail="raw_graph_query_requires_global_read")
     try:
         return get_graph_store().run_readonly_sparql(request.query)
     except GraphQueryValidationError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except GraphQueryError as error:
         raise HTTPException(status_code=503, detail="graph_service_unavailable") from error
+
+
+@app.get("/graph/templates", tags=["graph"])
+def list_graph_templates(
+    principal: Annotated[PrincipalContext, Depends(get_current_principal)],
+) -> list[dict[str, Any]]:
+    del principal
+    return GraphTemplateService.describe()
+
+
+@app.post(
+    "/graph/templates/{template_name}", response_model=GraphTemplateResult, tags=["graph"]
+)
+def run_graph_template(
+    template_name: str,
+    request: GraphTemplateRequest,
+    principal: Annotated[PrincipalContext, Depends(get_current_principal)],
+) -> GraphTemplateResult:
+    if not {"BUYER", "MANAGER", "ADMIN", "AUDITOR"}.intersection(principal.roles):
+        raise HTTPException(status_code=403, detail="graph_read_permission_required")
+    try:
+        return get_graph_template_service().run(template_name, request.parameters, principal)
+    except (GraphTemplateError, GraphQueryValidationError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except GraphQueryError as error:
+        raise HTTPException(status_code=503, detail="graph_service_unavailable") from error
+
+
+@app.post("/graph/ask", response_model=GraphAnswer, tags=["graph"])
+def ask_graph(
+    request: GraphQuestionRequest,
+    principal: Annotated[PrincipalContext, Depends(get_current_principal)],
+) -> GraphAnswer:
+    """Natural-language graph question answered by validated, generated SPARQL."""
+    if not {"BUYER", "MANAGER", "ADMIN", "AUDITOR"}.intersection(principal.roles):
+        raise HTTPException(status_code=403, detail="graph_read_permission_required")
+    try:
+        return get_nl_graph_query().answer(request.question, principal)
+    except SparqlGenerationError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except GraphQueryError as error:
+        raise HTTPException(status_code=503, detail="graph_service_unavailable") from error
+
+
+@app.get("/analytics/queries", tags=["analytics"])
+def list_analytics_queries(
+    principal: Annotated[PrincipalContext, Depends(get_current_principal)],
+) -> list[dict[str, Any]]:
+    del principal
+    return SqlCatalog.describe()
+
+
+@app.post("/analytics/{query_name}", response_model=SqlQueryResult, tags=["analytics"])
+def run_analytics_query(
+    query_name: str,
+    request: AnalyticsRequest,
+    principal: Annotated[PrincipalContext, Depends(get_current_principal)],
+) -> SqlQueryResult:
+    try:
+        return get_sql_catalog().run(query_name, request.parameters, principal)
+    except SqlAuthorizationError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except SqlCatalogError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/tools", tags=["agent"])
+def list_tools(
+    principal: Annotated[PrincipalContext, Depends(get_current_principal)],
+) -> list[dict[str, Any]]:
+    del principal
+    return get_tool_registry().specs()
 
 
 @app.post(

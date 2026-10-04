@@ -46,7 +46,7 @@ services:
   opa:
     image: openpolicyagent/opa:1.0.0
     restart: unless-stopped
-    command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
+    command: ["run", "--server", "--watch", "--addr=0.0.0.0:8181", "/policies"]
     volumes:
       - ./policies:/policies:ro
     ports:

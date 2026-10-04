@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 384
     dry_run: bool = True
     log_level: str = "INFO"
+    # LLM provider: mock (default, deterministic), openai_compatible (e.g. Ollama), bedrock.
+    llm_provider: str = "mock"
+    llm_base_url: str | None = None
+    llm_model: str | None = None
+    llm_api_key: str | None = None
+    llm_timeout_seconds: float = 30.0
+    aws_region: str | None = None
     # OTLP/HTTP collector base URL (Jaeger: http://jaeger:4318). Unset disables export.
     otel_exporter_otlp_endpoint: str | None = None
     jaeger_query_url: str | None = None

@@ -66,6 +66,7 @@ def build_purchase_order_row(
         record["status"],
         Jsonb(issues),
         record["source_system"],
+        datetime.fromisoformat(str(record["ordered_at"])) if record.get("ordered_at") else None,
     )
 
 
@@ -375,8 +376,9 @@ def ingest_generated_data(
             connection,
             """INSERT INTO purchase_order
                (purchase_order_id, requisition_id, source_supplier_id, canonical_supplier_id,
-                buyer_id, amount, currency, status, data_quality_issues, source_system)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                buyer_id, amount, currency, status, data_quality_issues, source_system,
+                created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()))
                ON CONFLICT (purchase_order_id) DO UPDATE SET
                  requisition_id = EXCLUDED.requisition_id,
                  source_supplier_id = EXCLUDED.source_supplier_id,
@@ -386,7 +388,8 @@ def ingest_generated_data(
                  currency = EXCLUDED.currency,
                  status = EXCLUDED.status,
                  data_quality_issues = EXCLUDED.data_quality_issues,
-                 source_system = EXCLUDED.source_system""",
+                 source_system = EXCLUDED.source_system,
+                 created_at = EXCLUDED.created_at""",
             po_rows,
         )
 

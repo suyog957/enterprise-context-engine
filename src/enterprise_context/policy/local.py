@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from enterprise_context.policy.models import PolicyDecision, ProcurementPolicyInput
+from enterprise_context.policy.models import (
+    PolicyDecision,
+    PolicyRuleRef,
+    ProcurementPolicyInput,
+)
 
-POLICY_VERSION = "0.1.0"
+POLICY_VERSION = "0.2.0"
 
 _MESSAGES = {
     "ACTION_NOT_SUPPORTED": "This action is not supported by the procurement policy.",
@@ -13,6 +17,17 @@ _MESSAGES = {
     "BUSINESS_UNIT_MISMATCH": "The principal is not authorized for this business unit.",
     "CATEGORY_NOT_APPROVED": "The supplier is not approved for a requisition category.",
     "MANAGER_APPROVAL_REQUIRED": "A manager must approve this purchase before execution.",
+}
+
+
+_RULES = {
+    "REQUISITION_NOT_APPROVED": ("REQ-001", "POL-004"),
+    "SUPPLIER_BLOCKED": ("SUP-004", "POL-000"),
+    "SUPPLIER_NOT_ACTIVE": ("SUP-003", "POL-000"),
+    "CATEGORY_NOT_APPROVED": ("CAT-002", "POL-003"),
+    "MANAGER_APPROVAL_REQUIRED": ("APR-001", "POL-001"),
+    "USER_NOT_AUTHORIZED": ("AUTH-001", "POL-001"),
+    "BUSINESS_UNIT_MISMATCH": ("AUTH-002", "POL-001"),
 }
 
 
@@ -55,4 +70,8 @@ def evaluate_procurement_policy(policy_input: ProcurementPolicyInput) -> PolicyD
         reason_codes=reason_codes,
         explanations=[_MESSAGES[code] for code in reason_codes],
         policy_version=POLICY_VERSION,
+        policy_rules=[
+            PolicyRuleRef(rule_id=_RULES[code][0], document_id=_RULES[code][1], reason_code=code)
+            for code in reason_codes
+        ],
     )
