@@ -91,3 +91,20 @@ test_buyer_cannot_approve_and_out_of_scope_is_blocked if {
   decisions := data.procurement.action_decisions with input as test_input
   decisions.APPROVE_REQUISITION.reason_codes == ["BUSINESS_UNIT_MISMATCH", "ROLE_NOT_PERMITTED"]
 }
+
+test_blocked_requisition_over_limit_is_not_presented_as_approval_required if {
+  draft := object.union(base_input.requisition, {"state": "SUBMITTED", "amount_minor": 5000000})
+  test_input := object.union(base_input, {"requisition": draft})
+  decision := data.procurement.decision with input as test_input
+  not decision.allowed
+  not decision.approval_required
+  decision.reason_codes == ["REQUISITION_NOT_APPROVED"]
+}
+
+test_manager_approval_allows_without_pending_approval_flag if {
+  over_limit := object.union(base_input.requisition, {"amount_minor": 5000000})
+  test_input := object.union(base_input, {"requisition": over_limit, "manager_approval_exists": true})
+  decision := data.procurement.decision with input as test_input
+  decision.allowed
+  not decision.approval_required
+}

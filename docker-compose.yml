@@ -147,6 +147,8 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
       target: tools
+      args:
+        INSTALL_EMBEDDINGS: ${INSTALL_EMBEDDINGS:-false}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-context_app}:${POSTGRES_PASSWORD:-local_dev_only_change_me}@postgres:5432/${POSTGRES_DB:-enterprise_context}
       TEST_DATABASE_URL: ${TEST_DATABASE_URL:-}
@@ -161,6 +163,7 @@ services:
       ONTOLOGY_DIR: /work/ontology
       MIGRATIONS_DIR: /work/infra/sql
       ENVIRONMENT: local
+      HF_HOME: /work/.cache/huggingface
     volumes:
       - .:/work
     working_dir: /work

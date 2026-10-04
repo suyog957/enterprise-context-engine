@@ -29,3 +29,6 @@ data/runtime/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Model caches
+.cache/

@@ -511,8 +511,16 @@ def latest_evaluation(
 ) -> dict[str, Any]:
     if "ADMIN" not in principal.roles and "AUDITOR" not in principal.roles:
         raise HTTPException(status_code=403, detail="evaluation_read_permission_required")
-    report_path = settings.data_dir / "evaluation" / "generated" / "policy_latest.json"
-    if not report_path.exists():
+    report_dir = settings.data_dir / "evaluation" / "generated"
+    report_path = next(
+        (
+            report_dir / name
+            for name in ("latest.json", "smoke_latest.json", "policy_latest.json")
+            if (report_dir / name).exists()
+        ),
+        None,
+    )
+    if report_path is None:
         raise HTTPException(status_code=404, detail="evaluation_report_not_found")
     try:
         payload = json.loads(report_path.read_text(encoding="utf-8"))

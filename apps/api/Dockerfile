@@ -26,5 +26,11 @@ CMD ["uvicorn", "enterprise_context.api:app", "--host", "0.0.0.0", "--port", "80
 # so code changes take effect without rebuilding.
 FROM base AS tools
 RUN pip install --no-cache-dir ".[dev]"
+# Optional: local sentence-transformer embeddings for retrieval evaluation (CPU-only torch).
+ARG INSTALL_EMBEDDINGS=false
+RUN if [ "$INSTALL_EMBEDDINGS" = "true" ]; then \
+      pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+      && pip install --no-cache-dir "sentence-transformers>=3.3,<6.0"; \
+    fi
 WORKDIR /work
 ENV PYTHONPATH=/work/src:/work

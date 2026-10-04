@@ -3,12 +3,18 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sys
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:  # allow running as a plain script
+    sys.path.insert(0, str(ROOT))
+
+from scripts.golden_cases import build_golden_sets  # noqa: E402
+
 BASE_TIME = datetime(2025, 1, 15, 12, 0, tzinfo=timezone.utc)
 # Purchase orders are spread over the 30 months before this fixed as-of date so
 # period questions ("spend last year") have deterministic answers.
@@ -523,6 +529,14 @@ def generate(seed: int, output_root: Path) -> dict[str, int]:
         golden / "entity_pairs.jsonl": entity_pairs,
         golden / "workflow_cases.jsonl": workflow_cases,
     }
+    evaluation_sets = build_golden_sets(
+        suppliers=suppliers,
+        principals=principals,
+        products=products,
+        requisitions=requisitions,
+        contracts=contracts,
+    )
+    datasets.update({golden / name: records for name, records in evaluation_sets.items()})
     for path, records in datasets.items():
         write_jsonl(path, records)
 

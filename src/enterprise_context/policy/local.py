@@ -6,7 +6,7 @@ from enterprise_context.policy.models import (
     ProcurementPolicyInput,
 )
 
-POLICY_VERSION = "0.2.0"
+POLICY_VERSION = "0.2.1"
 
 _MESSAGES = {
     "ACTION_NOT_SUPPORTED": "This action is not supported by the procurement policy.",
@@ -59,14 +59,18 @@ def evaluate_procurement_policy(policy_input: ProcurementPolicyInput) -> PolicyD
         or policy_input.supplier.risk_rating == "HIGH"
         or "Legal" in policy_input.requisition.categories
     )
+    # Approval is pending only when nothing else blocks the action (mirrors Rego).
+    approval_pending = (
+        not blockers and approval_required and not policy_input.manager_approval_exists
+    )
     reason_codes = sorted(blockers)
-    if approval_required and not policy_input.manager_approval_exists:
+    if approval_pending:
         reason_codes.append("MANAGER_APPROVAL_REQUIRED")
 
     allowed = not blockers and (not approval_required or policy_input.manager_approval_exists)
     return PolicyDecision(
         allowed=allowed,
-        approval_required=approval_required and not policy_input.manager_approval_exists,
+        approval_required=approval_pending,
         reason_codes=reason_codes,
         explanations=[_MESSAGES[code] for code in reason_codes],
         policy_version=POLICY_VERSION,

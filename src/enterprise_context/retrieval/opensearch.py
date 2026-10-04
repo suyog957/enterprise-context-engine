@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -17,6 +17,7 @@ from enterprise_context.retrieval.models import (
 from enterprise_context.retrieval.rrf import RankedDocument, reciprocal_rank_fusion
 
 SEARCH_ALIAS = "enterprise-context-documents"
+SearchMode = Literal["hybrid", "lexical", "vector"]
 VERSIONED_INDEX_PREFIX = f"{SEARCH_ALIAS}-v"
 
 
@@ -170,7 +171,9 @@ class OpenSearchHybridRetriever:
         *,
         allowed_roles: Sequence[str],
         business_unit_ids: Sequence[str],
+        mode: SearchMode = "hybrid",
     ) -> SearchResponse:
+        """Hybrid BM25 + k-NN with RRF; ``mode`` isolates one ranker for evaluation."""
         filters = authorization_filters(allowed_roles, business_unit_ids)
         if not allowed_roles:
             return SearchResponse(query=request.query, hits=[])
@@ -223,9 +226,11 @@ class OpenSearchHybridRetriever:
                     f"{self._base_url}/{self._index_name}/_search", json=vector_query
                 )
                 vector_response.raise_for_status()
+            lexical = _ranked_documents(lexical_response.json())
+            semantic = _ranked_documents(vector_response.json())
             fused = reciprocal_rank_fusion(
-                _ranked_documents(lexical_response.json()),
-                _ranked_documents(vector_response.json()),
+                lexical if mode != "vector" else [],
+                semantic if mode != "lexical" else [],
                 rank_constant=self._rank_constant,
                 limit=request.limit,
             )

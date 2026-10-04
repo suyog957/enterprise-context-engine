@@ -2,7 +2,7 @@ package procurement
 
 import rego.v1
 
-policy_version := "0.2.0"
+policy_version := "0.2.1"
 
 default decision := {
   "allowed": false,
@@ -10,12 +10,12 @@ default decision := {
   "reason_codes": ["POLICY_INPUT_INVALID"],
   "explanations": ["Required policy input is missing or invalid."],
   "policy_rules": [],
-  "policy_version": "0.2.0",
+  "policy_version": "0.2.1",
 }
 
 decision := {
   "allowed": allowed,
-  "approval_required": approval_required,
+  "approval_required": approval_pending,
   "reason_codes": reason_codes,
   "explanations": explanations,
   "policy_rules": [rule_refs[code] | some code in reason_codes; rule_refs[code]],
@@ -79,9 +79,18 @@ approval_required if {
 
 default approval_required := false
 
-approval_codes := ["MANAGER_APPROVAL_REQUIRED"] if {
+# Approval is only the outstanding step when nothing else blocks the action; a manager
+# approval can never unblock a blocked supplier or an unapproved requisition.
+approval_pending if {
+  count(blocker_codes) == 0
   approval_required
   not input.manager_approval_exists
+}
+
+default approval_pending := false
+
+approval_codes := ["MANAGER_APPROVAL_REQUIRED"] if {
+  approval_pending
 } else := []
 
 reason_codes := array.concat(sort([code | some code in blocker_codes]), approval_codes)
