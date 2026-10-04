@@ -138,6 +138,26 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
 
+  # Optional dashboards: `docker compose --profile observability up -d grafana`.
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana-oss:11.4.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-local_dev_only_change_me}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/enterprise-context.json
+    volumes:
+      - ./infra/docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "127.0.0.1:3000:3000"
+
   # Developer tooling: `docker compose --profile tools run --rm tools <command>`.
   # Runs scripts, lint, type checks and tests with the repository bind-mounted,
   # so no host Python installation is required.
@@ -174,3 +194,4 @@ volumes:
   fuseki_data:
   opensearch_data:
   prometheus_data:
+  grafana_data:

@@ -7,13 +7,17 @@ PY ?= $(TOOLS) python
 .PHONY: up down tools-build web-install web-build lint typecheck test test-integration \
 	migrate data-generate resolve-entities data-ingest build-graph build-search-index \
 	pipeline evaluate-smoke evaluate check rebuild-projections process-outbox \
-	test-e2e audit evaluate-full
+	test-e2e audit evaluate-full observability
 
 up:
 	docker compose up -d --build
 
 down:
 	docker compose down
+
+# Optional Grafana dashboards on http://127.0.0.1:3000
+observability:
+	docker compose --profile observability up -d grafana
 
 tools-build:
 	docker compose --profile tools build tools
