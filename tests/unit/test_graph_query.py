@@ -5,6 +5,7 @@ import pytest
 
 from enterprise_context.graph.query import (
     FusekiGraphStore,
+    GraphQueryError,
     GraphQueryValidationError,
     validate_readonly_sparql,
 )
@@ -93,3 +94,58 @@ def test_fuseki_client_uploads_only_the_validated_turtle_graph() -> None:
         ).replace_default_graph(
             b"@prefix ex: <urn:example:> . ex:s ex:p ex:o ."
         )
+
+
+def test_mutations_and_graph_escapes_are_rejected_with_specific_reasons() -> None:
+    with pytest.raises(GraphQueryValidationError, match="Mutation"):
+        validate_readonly_sparql("DELETE WHERE { ?s ?p ?o }")
+    with pytest.raises(GraphQueryValidationError, match="Mutation"):
+        validate_readonly_sparql("INSERT DATA { <urn:a> <urn:b> <urn:c> }")
+    with pytest.raises(GraphQueryValidationError, match="GRAPH patterns"):
+        validate_readonly_sparql("SELECT ?s WHERE { GRAPH ?g { ?s ?p ?o } } LIMIT 5")
+    with pytest.raises(GraphQueryValidationError, match="syntax"):
+        validate_readonly_sparql("SELEC nonsense")
+
+
+def test_reads_are_scoped_to_the_current_projection_graph() -> None:
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        form = parse_qs(request.content.decode())
+        assert form["default-graph-uri"] == ["urn:ecg:graph:context:v7"]
+        return httpx.Response(200, json={"head": {"vars": []}, "boolean": True})
+
+    with httpx.Client(transport=httpx.MockTransport(handle_request)) as client:
+        store = FusekiGraphStore(
+            "http://fuseki:3030/enterprise",
+            client=client,
+            graph_uri_provider=lambda: "urn:ecg:graph:context:v7",
+        )
+        result = store.run_readonly_sparql("ASK { ?s ?p ?o }")
+
+    assert result.boolean is True
+    assert result.graph_uri == "urn:ecg:graph:context:v7"
+
+
+def test_reads_fail_closed_when_no_projection_is_published() -> None:
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500))) as client:
+        store = FusekiGraphStore(
+            "http://fuseki:3030/enterprise", client=client, graph_uri_provider=lambda: None
+        )
+        with pytest.raises(GraphQueryError, match="No graph projection"):
+            store.run_readonly_sparql("ASK { ?s ?p ?o }")
+
+
+def test_named_graph_publication_uses_ntriples_and_admin_auth() -> None:
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PUT"
+        assert request.url.params["graph"] == "urn:ecg:graph:context:v2"
+        assert request.headers["content-type"] == "application/n-triples"
+        assert request.headers["authorization"].startswith("Basic ")
+        return httpx.Response(201)
+
+    with httpx.Client(transport=httpx.MockTransport(handle_request)) as client:
+        FusekiGraphStore(
+            "http://fuseki:3030/enterprise",
+            admin_user="admin",
+            admin_password="local-password",
+            client=client,
+        ).put_named_graph("urn:ecg:graph:context:v2", b"<urn:a> <urn:b> <urn:c> .\n")

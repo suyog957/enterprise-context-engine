@@ -22,6 +22,8 @@ services:
     environment:
       ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD:-local_dev_only_change_me}
       FUSEKI_DATASET_1: enterprise
+      # Isolated dataset for integration tests; never used by the application.
+      FUSEKI_DATASET_2: enterprise_test
     ports:
       - "127.0.0.1:3030:3030"
     volumes:
@@ -123,6 +125,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-context_app}:${POSTGRES_PASSWORD:-local_dev_only_change_me}@postgres:5432/${POSTGRES_DB:-enterprise_context}
       TEST_DATABASE_URL: ${TEST_DATABASE_URL:-}
+      TEST_FUSEKI_URL: http://fuseki:3030/enterprise_test
       FUSEKI_URL: http://fuseki:3030/enterprise
       FUSEKI_ADMIN_USER: ${FUSEKI_ADMIN_USER:-admin}
       FUSEKI_ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD:-local_dev_only_change_me}

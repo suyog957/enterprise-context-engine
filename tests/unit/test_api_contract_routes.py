@@ -106,14 +106,11 @@ def test_graph_query_route_uses_bounded_fuseki_store(
     api_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class StubStore:
-        def __init__(self, base_url: str) -> None:
-            assert base_url
-
         def run_readonly_sparql(self, query: str) -> GraphQueryResult:
             assert "LIMIT 1" in query
             return GraphQueryResult(query_type="SelectQuery", rows=[{"s": "urn:acme"}])
 
-    monkeypatch.setattr("enterprise_context.api.FusekiGraphStore", StubStore)
+    monkeypatch.setattr("enterprise_context.api.get_graph_store", lambda: StubStore())
 
     response = api_client.post(
         "/graph/query",

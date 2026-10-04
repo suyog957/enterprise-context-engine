@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -335,6 +336,13 @@ def build_context_graph(
     quarantine_path = output_root / "shacl_quarantine.jsonl"
     summary_path = output_root / "graph_build_summary.json"
     valid_graph.serialize(destination=graph_path, format="turtle")
+    # Sorted N-Triples give a deterministic publication payload and content hash.
+    ntriples_lines = sorted(
+        line for line in valid_graph.serialize(format="nt").splitlines() if line.strip()
+    )
+    ntriples_payload = ("\n".join(ntriples_lines) + "\n").encode("utf-8")
+    ntriples_path = output_root / "context_graph.nt"
+    ntriples_path.write_bytes(ntriples_payload)
     report_graph.serialize(destination=report_path, format="turtle")
     with quarantine_path.open("w", encoding="utf-8", newline="\n") as output:
         for violation in violations:
@@ -349,6 +357,8 @@ def build_context_graph(
         "validation_results": len(violations),
         "shacl_report": report_text,
         "graph_path": str(graph_path),
+        "ntriples_path": str(ntriples_path),
+        "content_hash": hashlib.sha256(ntriples_payload).hexdigest(),
     }
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return summary

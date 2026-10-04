@@ -8,6 +8,8 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
 from enterprise_context.config import get_settings
+from enterprise_context.entity_resolution.normalization import normalize_supplier_name
+from enterprise_context.entity_resolution.query_matching import AliasRow, rank_alias_candidates
 from enterprise_context.security.principals import PrincipalContext
 
 
@@ -25,10 +27,14 @@ class EntityCandidate(BaseModel):
     matched_alias: str | None = None
     source_system: str | None = None
     confidence_score: float | None = None
+    match_band: str | None = None
+    match_method: str | None = None
+    review_required: bool = False
 
 
 class EntityResolveResponse(BaseModel):
     query: str
+    normalized_query: str | None = None
     candidates: list[EntityCandidate]
 
 
@@ -99,52 +105,99 @@ def _candidate_from_row(row: dict[str, Any]) -> EntityCandidate:
 def resolve_entities(
     request: EntityResolveRequest, principal: PrincipalContext
 ) -> EntityResolveResponse:
+    """Resolve a name or identifier to authorized canonical suppliers.
+
+    Stage 1 normalizes the query with the batch resolver's rules; stage 2 checks exact
+    identifiers; stage 3 retrieves trigram candidates over normalized aliases (blocking);
+    stage 4 reranks with RapidFuzz and assigns confidence bands. Authorization is applied
+    in SQL, so out-of-scope suppliers never leave the database.
+    """
     visibility_clause, visibility_parameters = _visible_supplier_clause(principal)
-    query_text = f"%{request.query.strip()}%"
-    sql = f"""SELECT cs.canonical_entity_id, cs.preferred_name, cs.status, cs.risk_rating,
-                     sr.payload ->> 'supplier_name' AS matched_alias,
-                     ssi.source_system, ssi.confidence_score
-              FROM canonical_supplier cs
-              LEFT JOIN source_supplier_identifier ssi
-                ON ssi.canonical_entity_id = cs.canonical_entity_id
-              LEFT JOIN source_record sr
-                ON sr.source_system = ssi.source_system
-               AND sr.source_record_id = ssi.source_record_id
-              WHERE {visibility_clause}
-                AND (
-                    cs.canonical_entity_id ILIKE %s
-                    OR cs.preferred_name ILIKE %s
-                    OR ssi.source_supplier_id ILIKE %s
-                    OR sr.payload ->> 'supplier_name' ILIKE %s
-                )
-              ORDER BY COALESCE(ssi.confidence_score, 0) DESC, cs.preferred_name
-              LIMIT %s"""
+    raw_query = request.query.strip()
+    normalized_query = normalize_supplier_name(raw_query)
     settings = get_settings()
-    candidates: list[EntityCandidate] = []
-    seen: set[str] = set()
     with psycopg.connect(
         settings.database_url, connect_timeout=3, row_factory=dict_row
     ) as connection:
-        rows = connection.execute(
-            sql,
-            (
-                *visibility_parameters,
-                query_text,
-                query_text,
-                query_text,
-                query_text,
-                request.limit * 3,
-            ),
+        identifier_rows = connection.execute(
+            f"""SELECT DISTINCT cs.canonical_entity_id
+                FROM canonical_supplier cs
+                LEFT JOIN source_supplier_identifier ssi
+                  ON ssi.canonical_entity_id = cs.canonical_entity_id
+                WHERE {visibility_clause}
+                  AND (cs.canonical_entity_id = %s OR upper(ssi.source_supplier_id) = upper(%s))
+                LIMIT 5""",
+            (*visibility_parameters, raw_query, raw_query),
         ).fetchall()
-    for row in rows:
-        entity_id = str(row["canonical_entity_id"])
-        if entity_id in seen:
-            continue
-        seen.add(entity_id)
-        candidates.append(_candidate_from_row(row))
-        if len(candidates) >= request.limit:
-            break
-    return EntityResolveResponse(query=request.query, candidates=candidates)
+        alias_rows = (
+            connection.execute(
+                f"""SELECT COALESCE(sa.canonical_entity_id, sa.candidate_entity_id) AS entity_id,
+                           sa.alias, sa.normalized_alias, sa.source_system,
+                           sa.review_required, sa.confidence_score
+                    FROM supplier_alias sa
+                    JOIN canonical_supplier cs
+                      ON cs.canonical_entity_id =
+                         COALESCE(sa.canonical_entity_id, sa.candidate_entity_id)
+                    WHERE {visibility_clause}
+                      AND (sa.normalized_alias %% %s OR %s <%% sa.normalized_alias)
+                    ORDER BY GREATEST(similarity(sa.normalized_alias, %s),
+                                      word_similarity(%s, sa.normalized_alias)) DESC
+                    LIMIT 50""",
+                (
+                    *visibility_parameters,
+                    normalized_query,
+                    normalized_query,
+                    normalized_query,
+                    normalized_query,
+                ),
+            ).fetchall()
+            if normalized_query
+            else []
+        )
+        matches = rank_alias_candidates(
+            raw_query,
+            [
+                AliasRow(
+                    entity_id=str(row["entity_id"]),
+                    alias=str(row["alias"]),
+                    normalized_alias=str(row["normalized_alias"]),
+                    source_system=str(row["source_system"]),
+                    review_required=bool(row["review_required"]),
+                    alias_confidence=float(row["confidence_score"]),
+                )
+                for row in alias_rows
+            ],
+            exact_identifier_entities=[str(row["canonical_entity_id"]) for row in identifier_rows],
+            limit=request.limit,
+        )
+        entity_ids = [match.entity_id for match in matches]
+        supplier_rows = {
+            str(row["canonical_entity_id"]): row
+            for row in connection.execute(
+                """SELECT canonical_entity_id, preferred_name, status, risk_rating
+                   FROM canonical_supplier WHERE canonical_entity_id = ANY(%s)""",
+                (entity_ids,),
+            ).fetchall()
+        }
+    candidates = [
+        EntityCandidate(
+            canonical_entity_id=match.entity_id,
+            preferred_name=str(supplier_rows[match.entity_id]["preferred_name"]),
+            status=str(supplier_rows[match.entity_id]["status"]),
+            risk_rating=str(supplier_rows[match.entity_id]["risk_rating"]),
+            matched_alias=match.matched_alias,
+            source_system=match.source_system,
+            confidence_score=match.score,
+            match_band=match.band.value,
+            match_method=match.method.value,
+            review_required=match.review_required,
+        )
+        for match in matches
+        if match.entity_id in supplier_rows
+    ]
+    return EntityResolveResponse(
+        query=request.query, normalized_query=normalized_query, candidates=candidates
+    )
 
 
 def get_entity_context(

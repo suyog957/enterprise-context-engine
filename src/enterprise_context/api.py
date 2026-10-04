@@ -41,8 +41,8 @@ from enterprise_context.domain.write_models import (
     PurchaseOrderCommand,
     PurchaseOrderExecution,
 )
+from enterprise_context.graph.dependencies import get_graph_store
 from enterprise_context.graph.query import (
-    FusekiGraphStore,
     GraphQueryError,
     GraphQueryResult,
     GraphQueryValidationError,
@@ -214,7 +214,7 @@ def query_graph(
     if not {"BUYER", "MANAGER", "ADMIN", "AUDITOR"}.intersection(principal.roles):
         raise HTTPException(status_code=403, detail="graph_read_permission_required")
     try:
-        return FusekiGraphStore(settings.fuseki_url).run_readonly_sparql(request.query)
+        return get_graph_store().run_readonly_sparql(request.query)
     except GraphQueryValidationError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except GraphQueryError as error:

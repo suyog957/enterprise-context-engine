@@ -150,6 +150,37 @@ def generate(seed: int, output_root: Path) -> dict[str, int]:
             )
         supplier_records_by_entity[supplier_id] = source_record_ids
 
+    # The brief's canonical alias scenario: Acme appears in further systems with
+    # capitalization, abbreviation and typo variants. "ACME" carries no identifiers,
+    # so it intentionally lands in the manual-review band instead of auto-merging.
+    acme = suppliers[0]
+    acme_variants = [
+        ("ACCOUNTS_PAYABLE", "AP-VEND-0000", "ACME CORP", acme["tax_id"], acme["website_domain"]),
+        ("CONTRACT_REPOSITORY", "CTR-PARTY-0000", "Acme Corpp", None, acme["website_domain"]),
+        ("PROCUREMENT_CARD", "PCARD-MERCH-0000", "ACME", None, None),
+    ]
+    acme_extra_record_ids: list[str] = []
+    for source, source_supplier_id, alias, tax_id, domain in acme_variants:
+        source_id = f"{source}-SUP-0000"
+        acme_extra_record_ids.append(source_id)
+        supplier_source_records.append(
+            {
+                "source_system": source,
+                "source_record_id": source_id,
+                "observed_at": BASE_TIME.isoformat(),
+                "supplier_name": alias,
+                "source_supplier_id": source_supplier_id,
+                "country_code": acme["country_code"],
+                "postal_code": acme["postal_code"],
+                "tax_id": tax_id,
+                "website_domain": domain,
+                "category": acme["category"],
+                "status": acme["status"],
+                "risk_rating": acme["risk_rating"],
+                "external_supplier_id": f"{source}-EXT-0000",
+            }
+        )
+
     business_units = [
         {
             "business_unit_id": f"BU-{index:03d}",
@@ -387,6 +418,15 @@ def generate(seed: int, output_root: Path) -> dict[str, int]:
             {
                 "left_source_record_id": record_ids[0],
                 "right_source_record_id": record_ids[1],
+                "same_entity": True,
+                "source_system": "golden_dataset",
+            }
+        )
+    for source_id in acme_extra_record_ids:
+        entity_pairs.append(
+            {
+                "left_source_record_id": supplier_records_by_entity["SUP-0000"][0],
+                "right_source_record_id": source_id,
                 "same_entity": True,
                 "source_system": "golden_dataset",
             }

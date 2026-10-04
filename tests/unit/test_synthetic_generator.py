@@ -16,7 +16,7 @@ def test_generator_creates_expected_dataset_sizes_and_source_provenance(
 
     expected_counts = {
         "suppliers.jsonl": 100,
-        "supplier_source_records.jsonl": 200,
+        "supplier_source_records.jsonl": 203,
         "business_units.jsonl": 10,
         "buyers.jsonl": 50,
         "principals.jsonl": 50,
@@ -72,7 +72,13 @@ def test_generator_preserves_required_demo_and_data_quality_cases(tmp_path: Path
     workflow_cases = read_jsonl(tmp_path / "golden" / "generated" / "workflow_cases.jsonl")
     entity_pairs = read_jsonl(tmp_path / "golden" / "generated" / "entity_pairs.jsonl")
     assert len(workflow_cases) == 75
-    assert len(entity_pairs) == 279
+    assert len(entity_pairs) == 282
+    acme_aliases = {
+        record["supplier_name"]
+        for record in read_jsonl(raw / "supplier_source_records.jsonl")
+        if record["external_supplier_id"].endswith("-0000")
+    }
+    assert {"Acme Corp", "ACME CORP", "Acme Corpp", "ACME"}.issubset(acme_aliases)
     assert all(
         record["source_system"] == "golden_dataset" for record in workflow_cases + entity_pairs
     )

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
+from psycopg.rows import tuple_row
 
 _MIGRATION_FILE = re.compile(r"^(\d{3})_[a-z0-9_]+\.sql$")
 
@@ -29,7 +30,7 @@ def discover_migrations(migrations_dir: Path) -> list[tuple[int, Path]]:
 
 def apply_migrations(connection: psycopg.Connection[Any], migrations_dir: Path) -> list[int]:
     """Apply pending migrations and return the versions applied by this call."""
-    with connection.cursor() as cursor:
+    with connection.cursor(row_factory=tuple_row) as cursor:
         cursor.execute(
             """CREATE TABLE IF NOT EXISTS schema_migration (
                    version INTEGER PRIMARY KEY,
@@ -39,7 +40,7 @@ def apply_migrations(connection: psycopg.Connection[Any], migrations_dir: Path) 
         # Serialize concurrent migrators (API start-up and scripts) on one advisory lock.
         cursor.execute("SELECT pg_advisory_xact_lock(724001)")
         cursor.execute("SELECT version FROM schema_migration")
-        applied = {int(row[0]) if isinstance(row, tuple) else int(row["version"]) for row in cursor}
+        applied = {int(row[0]) for row in cursor.fetchall()}
         newly_applied: list[int] = []
         for version, path in discover_migrations(migrations_dir):
             if version in applied:

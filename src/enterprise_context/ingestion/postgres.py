@@ -12,6 +12,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from enterprise_context.domain.models import EntityResolutionResult
+from enterprise_context.entity_resolution.normalization import normalize_supplier_name
 from enterprise_context.migrations import apply_migrations
 
 
@@ -107,6 +108,38 @@ def build_source_supplier_rows(
                 resolution.resolution_method.value,
                 resolution.confidence_score,
                 resolution.decision.value == "review",
+            )
+        )
+    return rows
+
+
+def build_supplier_alias_rows(
+    source_records: list[dict[str, Any]],
+    resolutions: dict[str, EntityResolutionResult],
+    canonical_ids: set[str],
+) -> list[tuple[Any, ...]]:
+    """Every observed supplier name, normalized for query-time resolution.
+
+    Review candidates keep a NULL canonical link and record the proposed entity
+    separately, so an unreviewed match is never presented as a confirmed merge.
+    """
+    rows: list[tuple[Any, ...]] = []
+    for record in source_records:
+        resolution = resolutions[str(record["source_record_id"])]
+        review = resolution.decision.value == "review"
+        canonical_id = None if review else resolution.canonical_entity_id
+        candidate_id = resolution.candidate_entity_id if review else None
+        rows.append(
+            (
+                record["source_system"],
+                record["source_record_id"],
+                canonical_id if canonical_id in canonical_ids else None,
+                candidate_id if candidate_id in canonical_ids else None,
+                record["supplier_name"],
+                normalize_supplier_name(str(record["supplier_name"])),
+                resolution.resolution_method.value,
+                resolution.confidence_score,
+                review,
             )
         )
     return rows
@@ -223,6 +256,25 @@ def ingest_generated_data(
                  confidence_score = EXCLUDED.confidence_score,
                  review_required = EXCLUDED.review_required""",
             build_source_supplier_rows(source_supplier_records, resolution_by_source),
+        )
+
+        execute_many(
+            connection,
+            """INSERT INTO supplier_alias
+               (source_system, source_record_id, canonical_entity_id, candidate_entity_id,
+                alias, normalized_alias, resolution_method, confidence_score, review_required)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (source_system, source_record_id) DO UPDATE SET
+                 canonical_entity_id = EXCLUDED.canonical_entity_id,
+                 candidate_entity_id = EXCLUDED.candidate_entity_id,
+                 alias = EXCLUDED.alias,
+                 normalized_alias = EXCLUDED.normalized_alias,
+                 resolution_method = EXCLUDED.resolution_method,
+                 confidence_score = EXCLUDED.confidence_score,
+                 review_required = EXCLUDED.review_required""",
+            build_supplier_alias_rows(
+                source_supplier_records, resolution_by_source, set(canonical_supplier_rows)
+            ),
         )
 
         execute_many(
