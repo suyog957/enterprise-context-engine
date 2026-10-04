@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_dimensions: int = 384
     dry_run: bool = True
+    log_level: str = "INFO"
+    # OTLP/HTTP collector base URL (Jaeger: http://jaeger:4318). Unset disables export.
+    otel_exporter_otlp_endpoint: str | None = None
+    jaeger_query_url: str | None = None
+    jaeger_public_url: str = "http://127.0.0.1:16686"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

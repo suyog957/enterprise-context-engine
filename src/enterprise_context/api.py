@@ -1,10 +1,15 @@
 import json
+import logging
+import re
+import time
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from opentelemetry import trace
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
@@ -47,6 +52,10 @@ from enterprise_context.graph.query import (
     GraphQueryResult,
     GraphQueryValidationError,
 )
+from enterprise_context.observability.context import current_trace_id, set_request_id
+from enterprise_context.observability.jaeger import fetch_trace_summary
+from enterprise_context.observability.logging import configure_logging
+from enterprise_context.observability.tracing import configure_tracing
 from enterprise_context.policy.client import PolicyServiceError
 from enterprise_context.policy.models import PolicyDecision
 from enterprise_context.retrieval.dependencies import get_search_retriever
@@ -55,20 +64,51 @@ from enterprise_context.retrieval.opensearch import OpenSearchError
 from enterprise_context.security.principals import PrincipalContext, get_current_principal
 
 settings = get_settings()
+configure_logging(settings.log_level)
+tracing_enabled = configure_tracing(
+    service_name=settings.service_name,
+    service_version=settings.service_version,
+    environment=settings.environment,
+    otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+)
+logger = logging.getLogger("enterprise_context.api")
 app = FastAPI(
     title="Enterprise Context Graph Agent API",
-    version="0.1.0",
+    version=settings.service_version,
     description="Local-first semantic context and policy-grounded procurement API.",
 )
 Instrumentator().instrument(app).expose(app, include_in_schema=False)
+_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 @app.middleware("http")
-async def attach_request_id(request: Request, call_next):  # type: ignore[no-untyped-def]
-    request_id = request.headers.get("x-request-id") or str(uuid4())
+async def attach_request_context(request: Request, call_next):  # type: ignore[no-untyped-def]
+    inbound = request.headers.get("x-request-id", "")
+    request_id = inbound if _REQUEST_ID_PATTERN.match(inbound) else str(uuid4())
+    set_request_id(request_id)
+    trace.get_current_span().set_attribute("ecg.request_id", request_id)
+    started = time.perf_counter()
     response = await call_next(request)
     response.headers["x-request-id"] = request_id
+    trace_id = current_trace_id()
+    if trace_id:
+        response.headers["x-trace-id"] = trace_id
+    if not request.url.path.startswith(("/health", "/metrics")):
+        logger.info(
+            "request completed",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            },
+        )
     return response
+
+
+if tracing_enabled:
+    # Added last so it is the outermost middleware and its span covers the request.
+    FastAPIInstrumentor.instrument_app(app, excluded_urls="health/.*,metrics")
 
 
 @app.get("/health/live", tags=["health"])
@@ -300,8 +340,11 @@ def trace_details(
     trace_id: str,
     principal: Annotated[PrincipalContext, Depends(get_current_principal)],
 ) -> dict[str, Any]:
+    """Audit events plus the distributed-trace span summary for a request or trace ID."""
     if "ADMIN" not in principal.roles and "AUDITOR" not in principal.roles:
         raise HTTPException(status_code=403, detail="trace_read_permission_required")
+    if not _REQUEST_ID_PATTERN.match(trace_id):
+        raise HTTPException(status_code=400, detail="invalid_trace_id")
     try:
         with psycopg.connect(
             settings.database_url, connect_timeout=3, row_factory=dict_row
@@ -312,12 +355,30 @@ def trace_details(
                           details, occurred_at
                    FROM audit_event
                    WHERE request_id = %s OR event_id::text = %s
+                      OR details ->> 'trace_id' = %s
                    ORDER BY occurred_at""",
-                (trace_id, trace_id),
+                (trace_id, trace_id, trace_id),
             ).fetchall()
     except psycopg.Error as error:
         raise HTTPException(status_code=503, detail="database_unavailable") from error
-    return {"trace_id": trace_id, "events": [dict(row) for row in rows]}
+    events = [dict(row) for row in rows]
+    jaeger_trace_id = next(
+        (str(event["details"].get("trace_id")) for event in events
+         if isinstance(event.get("details"), dict) and event["details"].get("trace_id")),
+        trace_id,
+    )
+    spans = fetch_trace_summary(settings.jaeger_query_url, jaeger_trace_id)
+    return {
+        "trace_id": jaeger_trace_id,
+        "events": events,
+        "spans": spans.spans,
+        "span_source": spans.source,
+        "jaeger_url": (
+            f"{settings.jaeger_public_url.rstrip('/')}/trace/{jaeger_trace_id}"
+            if spans.spans
+            else None
+        ),
+    }
 
 
 @app.get("/evaluation/latest", tags=["evaluation"])

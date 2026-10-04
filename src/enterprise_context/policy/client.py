@@ -4,6 +4,8 @@ from typing import Any
 
 import httpx
 
+from enterprise_context.observability.metrics import POLICY_DECISIONS, POLICY_DENIAL_REASONS
+from enterprise_context.observability.tracing import observed_store_call
 from enterprise_context.policy.models import PolicyDecision, ProcurementPolicyInput
 
 
@@ -27,15 +29,36 @@ class OPAClient:
         owns_client = self._client is None
         client = self._client or httpx.Client(timeout=self._timeout_seconds)
         try:
-            response = client.post(
-                f"{self._base_url}/v1/data/procurement/decision",
-                json={"input": policy_input.model_dump(mode="json")},
-            )
-            response.raise_for_status()
-            result: Any = response.json().get("result")
-            if not isinstance(result, dict):
-                raise PolicyServiceError("OPA returned no procurement decision")
-            return PolicyDecision.model_validate(result)
+            with observed_store_call(
+                "opa",
+                "evaluate",
+                **{
+                    "ecg.action": policy_input.action,
+                    "ecg.resource_id": policy_input.requisition.requisition_id,
+                },
+            ) as span:
+                response = client.post(
+                    f"{self._base_url}/v1/data/procurement/decision",
+                    json={"input": policy_input.model_dump(mode="json")},
+                )
+                response.raise_for_status()
+                result: Any = response.json().get("result")
+                if not isinstance(result, dict):
+                    raise PolicyServiceError("OPA returned no procurement decision")
+                decision = PolicyDecision.model_validate(result)
+                outcome = (
+                    "allowed"
+                    if decision.allowed
+                    else "approval_required"
+                    if decision.approval_required
+                    else "denied"
+                )
+                span.set_attribute("ecg.outcome", outcome)
+                span.set_attribute("ecg.policy_version", decision.policy_version)
+                POLICY_DECISIONS.labels(action=policy_input.action, outcome=outcome).inc()
+                for reason in decision.reason_codes:
+                    POLICY_DENIAL_REASONS.labels(reason=reason).inc()
+                return decision
         except (httpx.HTTPError, ValueError) as error:
             if isinstance(error, PolicyServiceError):
                 raise

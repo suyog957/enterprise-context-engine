@@ -66,6 +66,9 @@ services:
       DATA_DIR: /app/data
       ENVIRONMENT: local
       DRY_RUN: ${DRY_RUN:-true}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      JAEGER_QUERY_URL: http://jaeger:16686
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       postgres:
         condition: service_healthy

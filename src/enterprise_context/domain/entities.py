@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from enterprise_context.config import get_settings
 from enterprise_context.entity_resolution.normalization import normalize_supplier_name
 from enterprise_context.entity_resolution.query_matching import AliasRow, rank_alias_candidates
+from enterprise_context.observability.tracing import traced
 from enterprise_context.security.principals import PrincipalContext
 
 
@@ -116,7 +117,9 @@ def resolve_entities(
     raw_query = request.query.strip()
     normalized_query = normalize_supplier_name(raw_query)
     settings = get_settings()
-    with psycopg.connect(
+    with traced(
+        "entity_resolution.resolve", **{"ecg.normalized_query": normalized_query}
+    ) as span, psycopg.connect(
         settings.database_url, connect_timeout=3, row_factory=dict_row
     ) as connection:
         identifier_rows = connection.execute(
@@ -170,6 +173,7 @@ def resolve_entities(
             exact_identifier_entities=[str(row["canonical_entity_id"]) for row in identifier_rows],
             limit=request.limit,
         )
+        span.set_attribute("ecg.candidate_count", len(matches))
         entity_ids = [match.entity_id for match in matches]
         supplier_rows = {
             str(row["canonical_entity_id"]): row

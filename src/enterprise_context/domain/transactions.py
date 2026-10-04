@@ -22,6 +22,7 @@ from enterprise_context.domain.write_models import (
     PurchaseOrderCommand,
     PurchaseOrderExecution,
 )
+from enterprise_context.observability.context import current_request_id, current_trace_id
 from enterprise_context.policy.client import OPAClient
 from enterprise_context.policy.models import PolicyDecision, ProcurementPolicyInput
 from enterprise_context.security.principals import PrincipalContext
@@ -565,13 +566,13 @@ class ProcurementTransactions:
                VALUES (%s, %s, %s, %s, 'PurchaseRequisition', %s, %s, %s, %s, %s)""",
             (
                 uuid4(),
-                str(uuid4()),
+                current_request_id(),
                 principal_id,
                 action_type,
                 resource_id,
                 outcome,
                 Jsonb(reason_codes),
                 policy_version,
-                Jsonb(details),
+                Jsonb({**details, "trace_id": current_trace_id()}),
             ),
         )

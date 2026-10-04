@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from enterprise_context.observability.tracing import observed_store_call
 from enterprise_context.retrieval.embeddings import EmbeddingProvider
 from enterprise_context.retrieval.models import (
     IndexedDocument,
@@ -203,14 +204,17 @@ class OpenSearchHybridRetriever:
 
         client, owns_client = self._get_client()
         try:
-            lexical_response = client.post(
-                f"{self._base_url}/{self._index_name}/_search", json=lexical_query
-            )
-            lexical_response.raise_for_status()
-            vector_response = client.post(
-                f"{self._base_url}/{self._index_name}/_search", json=vector_query
-            )
-            vector_response.raise_for_status()
+            index_attributes = {"ecg.index": self._index_name}
+            with observed_store_call("opensearch", "bm25_search", **index_attributes):
+                lexical_response = client.post(
+                    f"{self._base_url}/{self._index_name}/_search", json=lexical_query
+                )
+                lexical_response.raise_for_status()
+            with observed_store_call("opensearch", "knn_search", **index_attributes):
+                vector_response = client.post(
+                    f"{self._base_url}/{self._index_name}/_search", json=vector_query
+                )
+                vector_response.raise_for_status()
             fused = reciprocal_rank_fusion(
                 _ranked_documents(lexical_response.json()),
                 _ranked_documents(vector_response.json()),

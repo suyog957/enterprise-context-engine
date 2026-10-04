@@ -9,6 +9,8 @@ from rdflib import Literal
 from rdflib.plugins.sparql.parser import parseQuery, parseUpdate
 from rdflib.plugins.sparql.parserutils import CompValue
 
+from enterprise_context.observability.tracing import observed_store_call
+
 
 class GraphQueryError(RuntimeError):
     """Raised when a bounded read-only graph query cannot be completed."""
@@ -215,14 +217,15 @@ class FusekiGraphStore:
         owns_client = self._client is None
         client = self._client or httpx.Client(timeout=self._timeout_seconds + 1)
         try:
-            response = client.post(
-                f"{self._base_url}/query",
-                params=params,
-                data=data,
-                headers={"Accept": "application/sparql-results+json"},
-            )
-            response.raise_for_status()
-            return response.json()
+            with observed_store_call("fuseki", "query", **{"ecg.graph_uri": graph_uri}):
+                response = client.post(
+                    f"{self._base_url}/query",
+                    params=params,
+                    data=data,
+                    headers={"Accept": "application/sparql-results+json"},
+                )
+                response.raise_for_status()
+                return response.json()
         except (httpx.HTTPError, ValueError) as error:
             raise GraphQueryError("Fuseki graph query failed") from error
         finally:
