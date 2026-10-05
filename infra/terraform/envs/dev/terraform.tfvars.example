@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars and adjust. Never commit real values.
+region                = "us-east-1"
+name                  = "ecg-dev"
+allowed_cidrs         = ["203.0.113.10/32"] # your IP only
+documents_bucket_name = "ecg-dev-documents-<unique-suffix>"
+
+api_image = "<account>.dkr.ecr.us-east-1.amazonaws.com/enterprise-context-api:<tag>"
+web_image = "<account>.dkr.ecr.us-east-1.amazonaws.com/enterprise-context-web:<tag>"
+opa_image = "<account>.dkr.ecr.us-east-1.amazonaws.com/enterprise-context-opa:<tag>"
+
+# Private demo only: accept the local X-Dev-Principal header (no real authentication).
+allow_dev_identity = false
+
+# Optional
+# certificate_arn   = "arn:aws:acm:us-east-1:<account>:certificate/<id>"
+# bedrock_model_ids = ["anthropic.claude-sonnet-<version>"]
+# llm_provider      = "bedrock"
+# enable_neptune    = false

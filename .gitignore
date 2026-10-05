@@ -32,3 +32,11 @@ Thumbs.db
 
 # Model caches
 .cache/
+
+# Terraform / OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
+.terraform.lock.hcl

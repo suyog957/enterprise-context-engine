@@ -177,3 +177,31 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+
+  # 6. Terraform (OpenTofu) formatting, validation and linting. Never applied by CI.
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.8
+      - name: Format check
+        run: tofu fmt -recursive -check -diff
+      - name: Validate (no backend, no credentials)
+        working-directory: infra/terraform/envs/dev
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.55.0
+      - name: TFLint
+        run: |
+          tflint --init --config "$PWD/.tflint.hcl"
+          tflint --recursive --config "$PWD/.tflint.hcl"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
