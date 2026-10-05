@@ -40,3 +40,6 @@ Thumbs.db
 *.tfplan
 terraform.tfvars
 .terraform.lock.hcl
+
+# Local demo recordings
+demo/
