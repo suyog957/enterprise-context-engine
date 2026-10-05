@@ -1,5 +1,12 @@
 # Remediation Plan — closing the gaps against the brief and IMPLEMENTATION_PLAN.md
 
+> **Status (2026-10-04): all phases completed**, one commit per phase (`git log --oneline`).
+> Gates met: Fuseki publish hang fixed (versioned named graphs), query-time ER, OpenTelemetry
+> tracing and JSON logs, typed tools and SQL catalog, Context Engine, bounded LangGraph agent,
+> outbox projector and replayable rebuilds, evaluation with 87 trajectory cases and CI gates,
+> integration/e2e/browser tests, restructured UI, Grafana profile, validated Terraform, docs and ADRs.
+> Defects found and fixed along the way are listed in `docs/evaluation.md` and the commit messages.
+
 **Date:** 2026-10-04
 **Baseline:** commit `02a1c4f` (vertical slice: ingestion, ER, RDF/SHACL, OPA, hybrid search, PR-only agent, approval/idempotent writes)
 **Rule:** every phase ends with a gate; do not start a dependent phase while its gate fails. Open-source components only; paid/cloud providers stay optional adapters.
